@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="la">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lorem Ipsum — Portfolium</title>
+  <meta name="description" content="Lorem ipsum dolor sit amet — directio artis et cinematographia odorum." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js" defer></script>
+  <script type="module" src="js/main.js"></script>
+</head>
+<body class="is-loading">
+  <canvas class="gl" aria-hidden="true"></canvas>
+
+  <!-- Loader -->
+  <div class="loader" aria-hidden="true">
+    <div class="loader__mark">
+      <span class="loader__word">Lorem Ipsum</span>
+      <span class="loader__count"><span data-count>000</span></span>
+    </div>
+  </div>
+
+  <!-- Fixed chrome -->
+  <header class="chrome">
+    <a class="chrome__mark" href="#initium" data-cursor="link">Lorem&nbsp;Ipsum</a>
+    <span class="chrome__center">Portfolium · MMXXVI</span>
+    <nav class="chrome__nav" aria-label="Navigatio">
+      <a href="#opera" data-cursor="link">Opera</a>
+      <a href="#officia" data-cursor="link">Officia</a>
+      <a href="#contactus" data-cursor="link">Contactus</a>
+    </nav>
+  </header>
+  <div class="progress" aria-hidden="true"><span class="progress__bar"></span></div>
+  <div class="cursor" aria-hidden="true"><span class="cursor__label">Specta</span></div>
+
+  <main>
+    <!-- I. Hero -->
+    <section class="hero" id="initium">
+      <p class="eyebrow hero__eyebrow" data-intro>Directio artis &amp; cinematographia</p>
+      <h1 class="hero__title">
+        <span class="line"><span data-intro>Ars odoris,</span></span>
+        <span class="line"><span data-intro><em>lumine</em> facta.</span></span>
+      </h1>
+      <p class="hero__lede" data-intro>
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit. Imagines moventes pro domibus odorum nobilium.
+      </p>
+      <div class="hero__foot" data-intro>
+        <span class="hero__cue"><span class="hero__cue-line"></span>Descende</span>
+        <span class="hero__note">Opera selecta<br />MMXXIV — MMXXVI</span>
+      </div>
+    </section>
+
+    <!-- II. Manifesto -->
+    <section class="manifesto">
+      <p class="eyebrow" data-reveal>Manifestum</p>
+      <p class="manifesto__text" data-words>
+        Odorem non videmus. Eum igitur lumine, vitro et tempore fingimus — ut quod invisibile est, oculis tandem appareat, et memoria fiat quae numquam evanescit.
+      </p>
+      <div class="manifesto__cols">
+        <p data-reveal>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam.</p>
+        <p data-reveal>Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores.</p>
+      </div>
+    </section>
+
+    <!-- III. Opus I -->
+    <section class="film" id="opus-i" aria-label="Opus I — Aqua Coloniensis">
+      <div class="film__pin">
+        <header class="film__head">
+          <p class="eyebrow">Opus I</p>
+          <h2 class="film__title">Aqua <em>Coloniensis</em></h2>
+          <p class="film__meta">Cinematographia · Lux · MMXXVI</p>
+        </header>
+        <div class="film__frame" data-cursor="film">
+          <video data-src="assets/video/flacon-i.mp4" muted playsinline preload="auto"></video>
+        </div>
+        <div class="film__overlay">
+          <span class="film__index">I <span>/ II</span></span>
+          <ol class="film__captions">
+            <li><span>I.</span> Vitrum ex tenebris surgit.</li>
+            <li><span>II.</span> Aurum lucem quaerit.</li>
+            <li><span>III.</span> Forma corporis, anima odoris.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- IV. Interlude -->
+    <section class="interlude">
+      <blockquote>
+        <p class="interlude__quote" data-reveal>«&#8239;Odor est memoria<br /><em>quae non loquitur.</em>&#8239;»</p>
+        <cite data-reveal>— Lorem Ipsum</cite>
+      </blockquote>
+    </section>
+
+    <!-- V. Opus II -->
+    <section class="film film--alt" id="opus-ii" aria-label="Opus II — Crystallum">
+      <div class="film__pin">
+        <header class="film__head">
+          <p class="eyebrow">Opus II</p>
+          <h2 class="film__title"><em>Crystallum</em></h2>
+          <p class="film__meta">Ars digitalis · Vitrum · MMXXVI</p>
+        </header>
+        <div class="film__frame" data-cursor="film">
+          <video data-src="assets/video/flacon-ii.mp4" muted playsinline preload="auto"></video>
+        </div>
+        <div class="film__overlay">
+          <span class="film__index">II <span>/ II</span></span>
+          <ol class="film__captions">
+            <li><span>I.</span> Lux in facetis frangitur.</li>
+            <li><span>II.</span> Silentium, deinde splendor.</li>
+            <li><span>III.</span> Durities adamantis, lenitas aeris.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- VI. Services -->
+    <section class="officia" id="officia">
+      <header class="section-head">
+        <p class="eyebrow" data-reveal>Officia</p>
+        <h2 class="section-title" data-reveal>Quid <em>facimus</em></h2>
+      </header>
+      <ol class="officia__list">
+        <li data-reveal>
+          <span class="officia__num">I</span>
+          <h3>Directio artis</h3>
+          <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.</p>
+        </li>
+        <li data-reveal>
+          <span class="officia__num">II</span>
+          <h3>Cinematographia</h3>
+          <p>Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo.</p>
+        </li>
+        <li data-reveal>
+          <span class="officia__num">III</span>
+          <h3>Lux digitalis</h3>
+          <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- VII. Index of works -->
+    <section class="opera" id="opera">
+      <header class="section-head">
+        <p class="eyebrow" data-reveal>Index operum</p>
+        <h2 class="section-title" data-reveal>Opera <em>selecta</em></h2>
+      </header>
+      <ul class="opera__list">
+        <li><a href="#opus-i" data-preview="0" data-cursor="link"><span class="opera__num">I</span><span class="opera__name">Aqua Coloniensis</span><span class="opera__kind">Cinematographia</span><span class="opera__year">MMXXVI</span></a></li>
+        <li><a href="#opus-ii" data-preview="1" data-cursor="link"><span class="opera__num">II</span><span class="opera__name">Crystallum</span><span class="opera__kind">Ars digitalis</span><span class="opera__year">MMXXVI</span></a></li>
+        <li><a href="#opera" data-preview="0" data-cursor="link"><span class="opera__num">III</span><span class="opera__name">Nox Aurea</span><span class="opera__kind">Directio artis</span><span class="opera__year">MMXXV</span></a></li>
+        <li><a href="#opera" data-preview="1" data-cursor="link"><span class="opera__num">IV</span><span class="opera__name">Folium Ambrae</span><span class="opera__kind">Cinematographia</span><span class="opera__year">MMXXV</span></a></li>
+        <li><a href="#opera" data-preview="0" data-cursor="link"><span class="opera__num">V</span><span class="opera__name">Sal et Cedrus</span><span class="opera__kind">Lux digitalis</span><span class="opera__year">MMXXIV</span></a></li>
+        <li><a href="#opera" data-preview="1" data-cursor="link"><span class="opera__num">VI</span><span class="opera__name">Vitrum Silens</span><span class="opera__kind">Directio artis</span><span class="opera__year">MMXXIV</span></a></li>
+      </ul>
+    </section>
+
+    <!-- VIII. Contact -->
+    <footer class="contact" id="contactus">
+      <p class="eyebrow" data-reveal>Contactus</p>
+      <a class="contact__big" href="mailto:salve@loremipsum.studio" data-cursor="link" data-reveal>Scribe <em>mihi.</em></a>
+      <div class="contact__cols">
+        <div data-reveal>
+          <p class="contact__label">Epistula</p>
+          <a href="mailto:salve@loremipsum.studio" data-cursor="link">salve@loremipsum.studio</a>
+        </div>
+        <div data-reveal>
+          <p class="contact__label">Sedes</p>
+          <p>Lorem, Ipsum<br />Dolor Sit 12</p>
+        </div>
+        <div data-reveal>
+          <p class="contact__label">Retia</p>
+          <p><a href="#" data-cursor="link">Instagram</a> · <a href="#" data-cursor="link">Vimeo</a> · <a href="#" data-cursor="link">Behance</a></p>
+        </div>
+      </div>
+      <div class="contact__base">
+        <span>© MMXXVI Lorem Ipsum. Omnia iura reservata.</span>
+        <a href="#initium" data-cursor="link">Ad summum ↑</a>
+      </div>
+    </footer>
+  </main>
+
+  <!-- Hover preview for the index list -->
+  <div class="preview" aria-hidden="true">
+    <video data-src="assets/video/flacon-i.mp4" muted playsinline loop preload="auto"></video>
+    <video data-src="assets/video/flacon-ii.mp4" muted playsinline loop preload="auto"></video>
+  </div>
+</body>
+</html>
