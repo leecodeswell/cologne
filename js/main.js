@@ -133,7 +133,7 @@ async function boot() {
     : Promise.resolve();
 
   await Promise.all([fonts, preloadVideos((p) => (load.target = p * 0.92))]);
-  scene?.bakeRelief(); // needs the serif loaded for the inscription
+  await scene?.bakeRelief(); // needs the serif loaded for the lettering
   load.target = 1;
   await new Promise((resolve) => {
     const check = () => (load.shown > 0.995 ? (gsap.ticker.remove(check), resolve()) : null);

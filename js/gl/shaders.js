@@ -45,6 +45,16 @@ export const flowFrag = /* glsl */ `
     return smoothstep(falloff, 0.0, length(d));
   }
 
+  // same, with the rim pushed in and out by drifting noise so swellings
+  // grow like spreading damp in plaster rather than as circles
+  float bloom(vec2 uv, vec2 center, float falloff, float seed) {
+    vec2 d = uv - center;
+    d.x *= uAspect;
+    vec2 q = d / falloff * 2.2 + seed;
+    float warp = noise(q + uTime * 0.06) * 0.65 + noise(q * 2.3 - uTime * 0.04) * 0.35 - 0.5;
+    return smoothstep(falloff, 0.0, length(d) + warp * falloff * 0.55);
+  }
+
   void main() {
     // follow the wall as it scrolls
     vec2 uv = vUv - vec2(0.0, uShift);
@@ -63,14 +73,14 @@ export const flowFrag = /* glsl */ `
     data.rg += uVelocity * f * uDelta;
     data.b += lift * f * n1 * uDelta * 0.22;
 
-    float g = stamp(vUv, uGhost, uFalloff * 1.25);
+    float g = bloom(vUv, uGhost, uFalloff * 1.25, 3.1);
     data.a += uGhostAmount * g * n2 * uDelta * 0.05;
 
     for (int i = 0; i < SWELL_COUNT; i++) {
       vec4 sw = uSwells[i];
       if (sw.z <= 0.0) continue;
       float n3 = 0.35 + 0.65 * smoothstep(0.2, 0.9, noise(nuv * 4.0 + float(i) * 7.3 + uTime * 0.05));
-      data.a += sw.z * stamp(vUv, sw.xy, sw.w) * n3 * uDelta * 0.06;
+      data.a += sw.z * bloom(vUv, sw.xy, sw.w, float(i) * 5.7) * n3 * uDelta * 0.06;
     }
 
     data = clamp(data, vec4(-1.0, -1.0, 0.0, 0.0), vec4(1.0));
@@ -99,43 +109,145 @@ export const blurFrag = /* glsl */ `
     gl_FragColor = acc / wsum;
   }
 `;
+// --------------------------------------------------------------------------
+// Bake pass 1: the sculpture (sculpture.js), rendered once from straight
+// above with an orthographic camera. The depth test keeps the highest
+// surface, so overhanging petals hide what lies beneath them.
+//   r = height in tile widths, g = motif phase, b = sway weight
+// --------------------------------------------------------------------------
+export const sculptVert = /* glsl */ `
+  attribute vec2 aMotif;
+  varying vec3 vData;
+  void main() {
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vData = vec3(world.z, aMotif);
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
 
-// --------------------------------------------------------------------------
-// One-time bake: height, slopes and self-shadowing (at full depth) packed
-// into one texture, so the per-frame wall shader reads it with a single tap.
-//   r = height above the wall, g/b = slope x/y, a = occlusion toward light
-// --------------------------------------------------------------------------
+export const sculptFrag = /* glsl */ `
+  precision highp float;
+  varying vec3 vData;
+  void main() {
+    gl_FragColor = vec4(vData, 1.0);
+  }
+`;
+
+// Bake pass 2: add the carved lettering (an 8-bit canvas) to the sculpture.
+export const combineFrag = /* glsl */ `
+  precision highp float;
+  uniform sampler2D tSculpt;
+  uniform sampler2D tCarve;
+  uniform float uFlat;
+  uniform float uCarve;
+  varying vec2 vUv;
+  void main() {
+    vec4 s = texture2D(tSculpt, vUv);
+    float c = texture2D(tCarve, vUv).r;
+    gl_FragColor = vec4(s.r + (c - uFlat) * uCarve, s.g, s.b, 1.0);
+  }
+`;
+
 const LIGHT_GLSL = `const vec3 LIGHT = vec3(-0.52, 0.62, 0.58);`;
 
+const HASH_GLSL = `float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }`;
+
+// --------------------------------------------------------------------------
+// Bake pass 3: slopes and curvature at full resolution.
+//   r = height, g/b = slope along u/v, a = curvature (Laplacian / 1000)
+// --------------------------------------------------------------------------
 export const reliefBakeFrag = /* glsl */ `
   precision highp float;
   uniform sampler2D tHeight;
   uniform vec2 uTexel;
-  uniform float uDepth;
-  uniform float uFlat;
   varying vec2 vUv;
-  ${LIGHT_GLSL}
 
-  float H(vec2 p) { return texture2D(tHeight, p).r - uFlat; }
+  float H(vec2 p) { return texture2D(tHeight, p).r; }
 
   void main() {
-    vec2 p = vUv;
     vec2 e = uTexel;
-    float hx = H(p + vec2(e.x, 0.0)) - H(p - vec2(e.x, 0.0));
-    float hy = H(p + vec2(0.0, e.y)) - H(p - vec2(0.0, e.y));
-    float h0 = H(p);
+    float h0 = H(vUv);
+    float sx = (H(vUv + vec2(e.x, 0.0)) - H(vUv - vec2(e.x, 0.0))) / (2.0 * e.x);
+    float sy = (H(vUv + vec2(0.0, e.y)) - H(vUv - vec2(0.0, e.y))) / (2.0 * e.y);
+    vec2 f = e * 2.0;
+    float lap = H(vUv + vec2(f.x, 0.0)) + H(vUv - vec2(f.x, 0.0))
+              + H(vUv + vec2(0.0, f.y)) + H(vUv - vec2(0.0, f.y)) - 4.0 * h0;
+    lap /= f.x * f.x;
+    gl_FragColor = vec4(h0, sx, sy, clamp(lap * 1e-3, -60.0, 60.0));
+  }
+`;
 
-    // march toward the light over the height field
-    vec3 L = normalize(LIGHT);
-    vec2 dir = normalize(L.xy);
-    float rise = L.z / length(L.xy);
-    float occ = 0.0;
-    for (int i = 1; i <= 12; i++) {
-      float t = float(i) * 2.4;
-      float d = (H(p + dir * e * t) - h0) * uDepth * 0.5 - t * rise;
-      occ = max(occ, d / t);
+// --------------------------------------------------------------------------
+// Bake pass 4: horizon slopes in 8 directions (two passes of 4 channels).
+// For each direction, the steepest rise of the relief seen from this pixel,
+// with far terrain weighted down. A relief extruded by k has exactly k times
+// these slopes, so the wall shader derives ambient occlusion for any lift
+// from them: Immersive Garden's multi-level lighting bake, made continuous.
+// --------------------------------------------------------------------------
+export const horizonFrag = /* glsl */ `
+  precision highp float;
+  uniform sampler2D tHeight;
+  uniform float uDir0;    // first of the four directions (0 or 4)
+  uniform float uRadius;  // falloff distance, tile widths
+  varying vec2 vUv;
+  ${HASH_GLSL}
+
+  float H(vec2 p) { return texture2D(tHeight, p).r; }
+
+  void main() {
+    float h0 = H(vUv);
+    float jitter = hash(gl_FragCoord.xy);
+    vec4 m = vec4(0.0);
+    for (int d = 0; d < 4; d++) {
+      float a = (float(d) + uDir0 + jitter * 0.5) * 0.7854;
+      vec2 dir = vec2(cos(a), sin(a));
+      float best = 0.0;
+      float dist = 0.0005 * (1.0 + jitter);
+      for (int i = 0; i < 14; i++) {
+        float s = (H(vUv + dir * dist) - h0) / dist;
+        float w = 1.0 / (1.0 + dist * dist / (uRadius * uRadius));
+        best = max(best, s * w);
+        dist *= 1.4;
+      }
+      m[d] = best;
     }
-    gl_FragColor = vec4(h0, hx, hy, occ);
+    gl_FragColor = m;
+  }
+`;
+
+// --------------------------------------------------------------------------
+// Bake pass 5: soft shadow toward the light plus the slow channels.
+//   r = steepest rise toward the light (averaged over a small area light),
+//   g = wide-blurred height (cavity), b = motif phase, a = sway weight
+// --------------------------------------------------------------------------
+export const shadeBakeFrag = /* glsl */ `
+  precision highp float;
+  uniform sampler2D tHeight;
+  uniform sampler2D tCavity;
+  varying vec2 vUv;
+  ${LIGHT_GLSL}
+  ${HASH_GLSL}
+
+  float H(vec2 p) { return texture2D(tHeight, p).r; }
+
+  void main() {
+    vec4 c = texture2D(tHeight, vUv);
+    float h0 = c.r;
+    float jitter = hash(gl_FragCoord.xy);
+    float base = atan(LIGHT.y, LIGHT.x);
+    float sum = 0.0;
+    for (int k = -1; k <= 1; k++) {
+      float a = base + float(k) * 0.14;
+      vec2 dir = vec2(cos(a), sin(a));
+      float best = 0.0;
+      float dist = 0.0006 * (1.0 + jitter * 0.6);
+      for (int i = 0; i < 16; i++) {
+        best = max(best, (H(vUv + dir * dist) - h0) / dist);
+        dist *= 1.3;
+      }
+      sum += best;
+    }
+    gl_FragColor = vec4(sum / 3.0, texture2D(tCavity, vUv).r, c.g, c.b);
   }
 `;
 
@@ -169,78 +281,108 @@ export const grainBakeFrag = /* glsl */ `
 
 // --------------------------------------------------------------------------
 // The plaster wall. Lit per pixel from the baked relief; the flowmap scales
-// the relief depth so motifs rise where the cursor has been.
+// the relief depth so motifs rise where the cursor has been. Every lighting
+// term (normal, ambient occlusion, cast shadow, cavity, rim) is derived for
+// the current extrusion, so a half-risen petal is shaded like a shallower
+// carving rather than a faded deep one.
 // --------------------------------------------------------------------------
 export const reliefFrag = /* glsl */ `
   precision highp float;
-  uniform sampler2D tRelief;  // baked: height, slope x, slope y, occlusion
-  uniform sampler2D tCavity;  // baked: wide-blurred height
-  uniform sampler2D tGrain;   // baked: plaster grain
+  uniform sampler2D tRelief;   // height, slope u, slope v, curvature
+  uniform sampler2D tHorizonA; // horizon slopes, directions 0-3
+  uniform sampler2D tHorizonB; // horizon slopes, directions 4-7
+  uniform sampler2D tShade;    // light horizon, cavity height, phase, sway
+  uniform sampler2D tGrain;    // plaster grain
   uniform sampler2D tFlow;
   uniform float uAspect;     // viewport height / width
+  uniform float uTileScale;  // viewport width / tile width (<= 1 on phones)
+  uniform float uTileX;      // left edge of the viewport on the tile
   uniform float uScroll;     // wall offset in tile units
   uniform float uTime;
   uniform float uRest;       // relief depth with no cursor activity
   uniform float uReveal;     // intro, 0 → 1
-  uniform float uDepth;
-  uniform float uFlat;
+  uniform float uDepth;      // slope exaggeration at full lift
+  uniform float uAO;         // ambient occlusion strength
+  uniform float uAlive;      // amplitude of the per-motif breathing
   uniform vec3 uColor;
   uniform vec3 uDarkColor;
   uniform float uDark;       // 0 = plaster, 1 = dark polished stone
   varying vec2 vUv;
   ${LIGHT_GLSL}
-
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  ${HASH_GLSL}
 
   void main() {
-    // wall coordinates: x spans the viewport, y scrolls (tile is square)
-    float wallY = (1.0 - vUv.y) * uAspect + uScroll;
-    vec2 p = vec2(vUv.x, 1.0 - wallY);
+    // wall coordinates: the tile spans the viewport width (or more on phones)
+    float wallY = (1.0 - vUv.y) * uAspect * uTileScale + uScroll;
+    vec2 p = vec2(uTileX + vUv.x * uTileScale, 1.0 - wallY);
 
     vec4 flow = texture2D(tFlow, vUv);
     float lift = clamp(max(flow.b, flow.a), 0.0, 1.0);
-    lift = lift * lift * (3.0 - 2.0 * lift);
-    float k = mix(uRest, 1.0, lift) * uReveal;
 
     vec4 relief = texture2D(tRelief, p);
-    float h0 = relief.r;
-    float s = uDepth * k;
-    vec3 n = normalize(vec3(-relief.g * s, -relief.b * s, 1.0));
+    vec4 shade = texture2D(tShade, p);
+    float phase = shade.b;
+    float sway = shade.a;
 
+    // motifs rise in a staggered order, then breathe while they are raised
+    float lk = clamp(lift * 1.3 - phase * 0.3, 0.0, 1.0);
+    lk = lk * lk * (3.0 - 2.0 * lk);
+    float breathe = 1.0 + uAlive * sway * lk * sin(uTime * (1.1 + phase * 0.8) + phase * 37.0);
+    float k = mix(uRest, 1.0, lk) * uReveal * breathe;
+    float s = uDepth * k;
+
+    vec3 n = normalize(vec3(-relief.g * s, -relief.b * s, 1.0));
     vec3 L = normalize(LIGHT);
     float diff = max(dot(n, L), 0.0);
-    float shadow = 1.0 - clamp(relief.a * 2.2 * k, 0.0, 0.42);
 
-    // cavity: darker in crevices, slightly brighter on crests
-    float cav = (texture2D(tCavity, p).r - uFlat - h0) * k;
-    float ao = 1.0 - clamp(cav * 2.2, 0.0, 0.45) + clamp(-cav * 0.6, 0.0, 0.06);
+    // ambient occlusion: mean sine of the horizon angle over 8 directions
+    vec4 ha = max(texture2D(tHorizonA, p) * s, 0.0);
+    vec4 hb = max(texture2D(tHorizonB, p) * s, 0.0);
+    vec4 oa = ha * inversesqrt(1.0 + ha * ha);
+    vec4 ob = hb * inversesqrt(1.0 + hb * hb);
+    float occl = dot(oa + ob, vec4(0.125));
+    float ao = clamp(1.0 - uAO * occl, 0.0, 1.0);
 
-    const float amb = 0.6;
-    const float kd = 0.5;
-    float lit = (amb + kd * diff) / (amb + kd * L.z);
+    // soft cast shadow: is the terrain toward the light steeper than the light?
+    float rise = L.z / length(L.xy);
+    float shadow = 1.0 - 0.62 * smoothstep(rise * 0.5, rise * 1.6, shade.r * s);
 
-    vec3 plaster = uColor * lit * shadow * ao;
+    // cavity: crevices a little darker, crests a little brighter
+    float cav = (shade.g - relief.r) * s;
+    float cavity = 1.0 - clamp(cav * 24.0, 0.0, 0.25) + clamp(-cav * 6.0, 0.0, 0.05);
 
-    // faint sheen while the cursor is moving
+    // crisp light on convex rims (petal edges, feather shafts, berries)
+    float curv = -relief.a * s;
+    vec2 nxy = n.xy + 1e-5;
+    float toLight = max(dot(normalize(nxy), normalize(L.xy)), 0.0);
+    float rim = smoothstep(0.25, 1.6, curv) * (0.35 + 0.65 * toLight);
+
+    const float amb = 0.5;
+    const float kd = 0.75;
+    float lit = (amb * ao + kd * diff * shadow * mix(1.0, ao, 0.4)) / (amb + kd * L.z);
+    vec3 plaster = uColor * lit * cavity;
+    // occluded plaster cools slightly, like a studio render's bounce light
+    plaster *= mix(vec3(0.95, 0.965, 1.0), vec3(1.0), ao);
     vec3 R = reflect(-L, n);
-    float spec = pow(max(R.z, 0.0), 28.0);
-    plaster += spec * 0.05 * lift;
+    float spec = pow(max(R.z, 0.0), 24.0);
+    plaster += (rim * 0.09 + spec * 0.05) * lk * shadow;
 
     // dark polished stone: little diffuse, glossy highlights catch the edges
     float edge = smoothstep(0.04, 0.4, 1.0 - n.z);
     float gloss = pow(max(R.z, 0.0), 10.0);
-    float rim = smoothstep(0.02, 0.5, 1.0 - n.z) * max(dot(normalize(n.xy + 1e-5), normalize(L.xy)), 0.0);
+    float rimS = smoothstep(0.02, 0.5, 1.0 - n.z) * toLight;
     float facing = max(dot(n, L), 0.0) - L.z; // > 0 on slopes turned to the light
-    vec3 stone = uDarkColor * (0.8 + 1.2 * (lit - 1.0)) * shadow * mix(1.0, ao, 0.7);
-    stone += vec3(0.24, 0.25, 0.29) * max(facing, 0.0) * k;
-    stone += vec3(0.62, 0.66, 0.72) * (gloss * 0.85 + rim * 0.4) * k;
+    vec3 stone = uDarkColor * (0.8 + 1.2 * (lit - 1.0)) * mix(1.0, ao * shadow, 0.75);
+    stone += vec3(0.24, 0.25, 0.29) * max(facing, 0.0) * k * shadow;
+    stone += vec3(0.62, 0.66, 0.72) * (gloss * 0.8 + rimS * 0.35 + rim * 0.5) * k * shadow;
 
     vec3 col = mix(plaster, stone, uDark);
 
-    // iridescent hint on steep edges where the trail is fast
+    // iridescent, fresnel-masked tint on steep faces: strongest where the
+    // trail is fast, a faint pearl on anything raised
     float vel = clamp(length(flow.rg) * 1.5, 0.0, 1.0);
-    vec3 hue = 0.5 + 0.5 * cos(6.2831 * (n.x * 0.6 + n.y * 0.4 + vec3(0.0, 0.33, 0.67)));
-    col = mix(col, col * (0.8 + 0.4 * hue), vel * edge * mix(0.22, 0.6, uDark));
+    vec3 hue = 0.5 + 0.5 * cos(6.2831 * (n.x * 0.6 + n.y * 0.4 + phase * 0.3 + vec3(0.0, 0.33, 0.67)));
+    col = mix(col, col * (0.8 + 0.4 * hue), edge * (vel * mix(0.22, 0.6, uDark) + lk * 0.07));
 
     // grain, soft light falloff, dithering
     float grain = texture2D(tGrain, p).r;
@@ -252,6 +394,7 @@ export const reliefFrag = /* glsl */ `
     gl_FragColor = vec4(col, 1.0);
   }
 `;
+
 
 // --------------------------------------------------------------------------
 // Video planes, positioned over DOM elements. The same flowmap bends and

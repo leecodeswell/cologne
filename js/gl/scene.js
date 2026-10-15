@@ -1,10 +1,16 @@
 import * as THREE from "three";
-import { createHeightCanvas, FLAT } from "./heightmap.js";
+import { createCarveCanvas, FLAT, CARVE_DEPTH } from "./heightmap.js";
+import { buildSculpture } from "./sculpture.js";
 import {
   fullscreenVert,
   flowFrag,
   blurFrag,
+  sculptVert,
+  sculptFrag,
+  combineFrag,
   reliefBakeFrag,
+  horizonFrag,
+  shadeBakeFrag,
   grainBakeFrag,
   reliefFrag,
   videoVert,
@@ -12,7 +18,7 @@ import {
 } from "./shaders.js";
 
 const WALL_SPEED = 0.45; // wall parallax relative to page scroll
-const HEIGHT_SIZE = 2048;
+const MIN_TILE = 760; // css px: on narrower screens the tile overflows to the left
 const FLOW_SIZE = 256;
 const SWELL_COUNT = 6; // random swellings alive at once
 
@@ -28,6 +34,16 @@ function target(size, opts = {}) {
   });
   rt.texture.generateMipmaps = false;
   return rt;
+}
+
+// Build the sculpture in a module worker; fall back to the main thread.
+function buildSculptureAsync(opts) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("./sculpture.worker.js", import.meta.url), { type: "module" });
+    worker.onmessage = (e) => (worker.terminate(), resolve(e.data));
+    worker.onerror = (e) => (worker.terminate(), reject(e));
+    worker.postMessage(opts);
+  }).catch(() => buildSculpture(opts));
 }
 
 function pass(fragmentShader, uniforms, defines = {}) {
@@ -109,6 +125,19 @@ export class WallScene {
     // output is unconverted, so pass the plaster tone as raw values
     this.renderer.setClearColor(new THREE.Color().setRGB(0xe7 / 255, 0xe3 / 255, 0xdc / 255), 1);
 
+    // Bake budget: phones, small screens and weak machines get a 1024 bake
+    // with lighter tessellation; float height maps where filterable.
+    const ext = this.renderer.extensions;
+    this.floatOK = ext.has("EXT_color_buffer_float") && ext.has("OES_texture_float_linear");
+    const small = Math.min(screen.width || innerWidth, screen.height || innerHeight) < 600 || matchMedia("(pointer: coarse)").matches;
+    const weak = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
+    const lowTier = small || weak || this.renderer.capabilities.maxTextureSize < 4096;
+    this.bakeSize = lowTier ? 1024 : 2048;
+    this.bakeDetail = lowTier ? 0.7 : 1;
+
+    // start building the sculpture now; it is baked once fonts and videos load
+    this.sculpture = buildSculptureAsync({ detail: this.bakeDetail });
+
     this.flow = new Flowmap(this.renderer);
     this.films = [];
     this.time = 0;
@@ -138,83 +167,135 @@ export class WallScene {
 
     this.resize();
   }
-
-  // Bake the procedural relief into float textures: a lightly blurred height
-  // map and a heavily blurred copy used for cavity shading.
-  bakeRelief() {
+  // Bake the relief (see README, "How the relief is made"):
+  //   1. build the sculpture as 3D geometry and render it top-down into a
+  //      height map, three copies stacked so the tile wraps vertically;
+  //   2. add the carved lettering, blur lightly;
+  //   3. bake slopes + curvature, 8-direction horizons, and a soft shadow
+  //      toward the light, so the per-frame shader lights any lift level.
+  // The geometry is built in a worker started by the constructor, so only
+  // the GPU passes run here.
+  async bakeRelief() {
     const r = this.renderer;
-    const src = new THREE.CanvasTexture(createHeightCanvas(HEIGHT_SIZE));
-    src.colorSpace = THREE.NoColorSpace;
-    src.wrapS = src.wrapT = THREE.RepeatWrapping;
-    src.minFilter = THREE.LinearFilter;
-    src.generateMipmaps = false;
+    const N = this.bakeSize;
+    const half = N / 2;
+    const t0 = performance.now();
 
-    const blur = pass(blurFrag, {
-      tMap: { value: null },
-      uStep: { value: new THREE.Vector2() },
-      uSigma: { value: 1 },
-    });
-    const cam = new THREE.Camera();
-    const run = (input, output, stepX, stepY, sigma) => {
-      blur.material.uniforms.tMap.value = input;
-      blur.material.uniforms.uStep.value.set(stepX, stepY);
-      blur.material.uniforms.uSigma.value = sigma;
-      r.setRenderTarget(output);
-      r.render(blur.scene, cam);
-    };
-    const wrap = (rt) => {
-      rt.texture.wrapS = rt.texture.wrapT = THREE.RepeatWrapping;
+    const data = await this.sculpture;
+    const t1 = performance.now();
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(data.position, 3));
+    geometry.setAttribute("aMotif", new THREE.BufferAttribute(data.motif, 2));
+    geometry.setIndex(new THREE.BufferAttribute(data.index, 1));
+
+    const wrap = (rt, clampX = false) => {
+      rt.texture.wrapS = clampX ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+      rt.texture.wrapT = THREE.RepeatWrapping;
       return rt;
     };
+    const cam = new THREE.Camera();
+    const run = (p, output) => {
+      r.setRenderTarget(output);
+      r.render(p.scene, cam);
+    };
 
-    const tmp = wrap(target(HEIGHT_SIZE));
-    const height = wrap(target(HEIGHT_SIZE));
-    run(src, tmp, 1 / HEIGHT_SIZE, 0, 1.8);
-    run(tmp.texture, height, 0, 1 / HEIGHT_SIZE, 1.8);
+    // 1. sculpture → height, phase, sway (MSAA smooths the silhouettes)
+    const sculptRT = target(N, { depthBuffer: true, samples: r.capabilities.isWebGL2 ? 4 : 0 });
+    const material = new THREE.ShaderMaterial({ vertexShader: sculptVert, fragmentShader: sculptFrag, side: THREE.DoubleSide });
+    const sculpt = new THREE.Scene();
+    for (const dy of [-1, 0, 1]) {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.y = dy;
+      mesh.frustumCulled = false;
+      sculpt.add(mesh);
+    }
+    const top = new THREE.OrthographicCamera(0, 1, 1, 0, 0.1, 10);
+    top.position.z = 5;
+    const clear = r.getClearColor(new THREE.Color());
+    const clearAlpha = r.getClearAlpha();
+    r.setClearColor(0x000000, 0);
+    r.setRenderTarget(sculptRT);
+    r.clear();
+    r.render(sculpt, top);
+    r.setClearColor(clear, clearAlpha);
 
-    const small = 512;
-    const tmp2 = wrap(target(small));
-    const cavity = wrap(target(small));
-    run(height.texture, tmp2, 1 / small, 0, 5);
-    run(tmp2.texture, cavity, 0, 1 / small, 5);
-
-    // Bake slopes + self-shadowing into one texture, and grain next to the
-    // cavity, so the per-frame shader needs only a few texture reads.
-    const DEPTH = 16;
-    const bake = pass(reliefBakeFrag, {
-      tHeight: { value: height.texture },
-      uTexel: { value: new THREE.Vector2(1 / HEIGHT_SIZE, 1 / HEIGHT_SIZE) },
-      uDepth: { value: DEPTH },
+    // 2. + lettering, then a light blur (float where the GPU allows it)
+    const carve = new THREE.CanvasTexture(createCarveCanvas(N));
+    carve.colorSpace = THREE.NoColorSpace;
+    carve.minFilter = THREE.LinearFilter;
+    carve.generateMipmaps = false;
+    const hiType = this.floatOK ? THREE.FloatType : THREE.HalfFloatType;
+    const heightA = wrap(target(N, { type: hiType }), true);
+    const heightB = wrap(target(N, { type: hiType }), true);
+    const combine = pass(combineFrag, {
+      tSculpt: { value: sculptRT.texture },
+      tCarve: { value: carve },
       uFlat: { value: FLAT },
+      uCarve: { value: CARVE_DEPTH },
     });
-    const relief = tmp; // reuse the blur scratch target
-    r.setRenderTarget(relief);
-    r.render(bake.scene, cam);
+    run(combine, heightA);
+
+    const blur = pass(blurFrag, { tMap: { value: null }, uStep: { value: new THREE.Vector2() }, uSigma: { value: 1 } });
+    const blurRun = (input, output, sx, sy, sigma) => {
+      blur.material.uniforms.tMap.value = input;
+      blur.material.uniforms.uStep.value.set(sx, sy);
+      blur.material.uniforms.uSigma.value = sigma;
+      run(blur, output);
+    };
+    const sigma = N >= 2048 ? 1.1 : 0.7;
+    blurRun(heightA.texture, heightB, 1 / N, 0, sigma);
+    blurRun(heightB.texture, heightA, 0, 1 / N, sigma);
+    const height = heightA.texture;
+
+    // 3a. slopes + curvature
+    const relief = wrap(target(N), true);
+    const reliefBake = pass(reliefBakeFrag, { tHeight: { value: height }, uTexel: { value: new THREE.Vector2(1 / N, 1 / N) } });
+    run(reliefBake, relief);
+
+    // 3b. 8-direction horizons for ambient occlusion
+    const horizonA = wrap(target(half), true);
+    const horizonB = wrap(target(half), true);
+    const horizon = pass(horizonFrag, { tHeight: { value: height }, uDir0: { value: 0 }, uRadius: { value: 0.022 } });
+    run(horizon, horizonA);
+    horizon.material.uniforms.uDir0.value = 4;
+    run(horizon, horizonB);
+
+    // 3c. cavity (wide blur) + soft shadow + phase/sway
+    const small = 512;
+    const cavA = wrap(target(small), true);
+    const cavB = wrap(target(small), true);
+    blurRun(height, cavA, 1 / small, 0, 5);
+    blurRun(cavA.texture, cavB, 0, 1 / small, 5);
+    const shadeRT = wrap(target(half), true);
+    const shade = pass(shadeBakeFrag, { tHeight: { value: height }, tCavity: { value: cavB.texture } });
+    run(shade, shadeRT);
+
     const grain = pass(grainBakeFrag, {});
     const grainRT = wrap(target(1024));
-    r.setRenderTarget(grainRT);
-    r.render(grain.scene, cam);
+    run(grain, grainRT);
     r.setRenderTarget(null);
 
-    src.dispose();
-    height.dispose();
-    tmp2.dispose();
-    blur.material.dispose();
-    bake.material.dispose();
-    grain.material.dispose();
+    for (const d of [geometry, material, carve, sculptRT, heightA, heightB, cavA, cavB]) d.dispose();
+    for (const p of [combine, blur, reliefBake, horizon, shade, grain]) p.material.dispose();
+    this.bakeStats = { size: N, vertices: geometry.attributes.position.count, waitMs: Math.round(t1 - t0), totalMs: Math.round(performance.now() - t0) };
 
     this.reliefUniforms = {
       tRelief: { value: relief.texture },
-      tCavity: { value: cavity.texture },
+      tHorizonA: { value: horizonA.texture },
+      tHorizonB: { value: horizonB.texture },
+      tShade: { value: shadeRT.texture },
       tGrain: { value: grainRT.texture },
       tFlow: { value: this.flow.texture },
       uAspect: { value: 1 },
+      uTileScale: { value: 1 },
+      uTileX: { value: 0 },
       uScroll: { value: 0 },
       uTime: { value: 0 },
-      uRest: { value: this.reducedMotion ? 0.45 : 0.03 },
+      uRest: { value: this.reducedMotion ? 0.4 : 0.015 },
       uReveal: { value: 0 },
-      uDepth: { value: DEPTH },
-      uFlat: { value: FLAT },
+      uDepth: { value: 1.0 },
+      uAO: { value: 1.1 },
+      uAlive: { value: this.reducedMotion ? 0 : 0.12 },
       // raw sRGB values: THREE.Color would convert hex to linear and darken it
       uColor: { value: new THREE.Vector3(0xe7 / 255, 0xe3 / 255, 0xdc / 255) },
       // matches the navy-black of the film backdrops
@@ -285,7 +366,15 @@ export class WallScene {
     const buffer = this.renderer.getDrawingBufferSize(new THREE.Vector2());
 
     this.flow.uniforms.uAspect.value = this.width / this.height;
-    if (this.reliefUniforms) this.reliefUniforms.uAspect.value = this.height / this.width;
+    // the tile is at least MIN_TILE wide; on phones the viewport shows its
+    // right-hand part, where the wreath and medallion sit
+    this.tilePx = Math.max(this.width, MIN_TILE);
+    if (this.reliefUniforms) {
+      const scale = this.width / this.tilePx;
+      this.reliefUniforms.uAspect.value = this.height / this.width;
+      this.reliefUniforms.uTileScale.value = scale;
+      this.reliefUniforms.uTileX.value = Math.max(0, 0.97 - scale);
+    }
 
     const cam = this.filmCamera;
     cam.left = 0;
@@ -424,7 +513,7 @@ export class WallScene {
 
     const ru = this.reliefUniforms;
     ru.tFlow.value = this.flow.texture;
-    ru.uScroll.value = (this.scrollY * WALL_SPEED) / this.width;
+    ru.uScroll.value = (this.scrollY * WALL_SPEED) / this.tilePx;
     ru.uTime.value = this.time;
     ru.uReveal.value = this.reveal.value;
     this.dark += (this.darkTarget - this.dark) * (1 - Math.pow(1 - 0.12, dt));
