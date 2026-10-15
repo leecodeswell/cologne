@@ -73,8 +73,8 @@ export const flowFrag = /* glsl */ `
     dc.x *= uAspect;
     float wob = (noise(nuv * 6.0 + uTime * 0.1) - 0.5) * uFalloff * 0.25;
     float dist = length(dc) + wob;
-    float core = 1.0 - smoothstep(uFalloff * 0.3, uFalloff * 0.55, dist);       // fully revealed
-    float ring = (1.0 - smoothstep(uFalloff * 0.55, uFalloff, dist)) * 0.55;    // partly revealed
+    float core = 1.0 - smoothstep(uFalloff * 0.55, uFalloff * 0.75, dist);       // fully revealed
+    float ring = (1.0 - smoothstep(uFalloff * 0.75, uFalloff, dist)) * 0.55;    // partly revealed
     float here = max(core, ring);
     // grow toward the target over ~0.7 s instead of appearing at once
     data.b = max(data.b, mix(data.b, here, 1.0 - pow(0.94, uDelta)));
@@ -286,7 +286,7 @@ export const grainBakeFrag = /* glsl */ `
     vec2 w = vUv + 0.04 * vec2(noise(vUv * 9.0, 9.0), noise(vUv * 9.0 + 3.1, 9.0));
     float r1 = 1.0 - abs(noise(w * 5.0, 5.0) * 2.0 - 1.0);
     float r2 = 1.0 - abs(noise(w * 11.0 + 1.7, 11.0) * 2.0 - 1.0);
-    float veins = pow(r1, 60.0) + 0.5 * pow(r2, 80.0);
+    float veins = pow(r1, 26.0) + 0.6 * pow(r2, 40.0) + 0.25 * pow(r1, 6.0);
     gl_FragColor = vec4(v / 0.75, veins, 0.0, 1.0);
   }
 `;
@@ -471,7 +471,7 @@ export const reliefFrag = /* glsl */ `
     lit *= 1.0 + 0.08 * smoothstep(0.03, 0.35, relief.r * k);
     vec3 plaster = uColor * lit;
     // faint marble veins in the plaster, as on immersive-g.com
-    plaster *= 1.0 - texture2D(tGrain, p).g * 0.014;
+    plaster *= 1.0 - texture2D(tGrain, p).g * 0.035; // slight marbling
     // paper folds catch the faintest line while the sheet is bending
     plaster *= 1.0 - crease * 0.01;
     vec3 R = reflect(-L, n);

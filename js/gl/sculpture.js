@@ -627,7 +627,7 @@ function laurel(S, rand, x0, y0, cx, cy, x1, y1, leafLen, z0, phase, side = 0) {
 
 // Medallion disc: bevelled edge, raised bead rim and a fine inner ring.
 // The "LI" letters come from the carved canvas layer (heightmap.js).
-export const MEDALLION = { x: 0.72, y: 0.27, r: 0.085, h: 0.11 }; // h = field height / r
+export const MEDALLION = { x: 0.72, y: 0.27, r: 0.098, h: 0.11 }; // h = field height / r
 function medallion(S, phase) {
   const { x, y, r, h } = MEDALLION;
   S.disc(
@@ -930,10 +930,10 @@ function spray(S, rand, path, o, phase) {
 // ---------------------------------------------------------------------------
 export const BAND = { y: 0.9, half: 0.034 }; // inscription band (carved canvas)
 
-const LAYER = { back: 0.15, flowers: 1, logo: 5.5 };
+const LAYER = { back: 0.32, flowers: 1, logo: 8 };
 // each spray gets its own height, so neighbouring groups sit at very
 // different depths instead of one flat layer of flowers
-const SPRAY_HEIGHTS = [1.9, 0.7, 2.6, 1.1, 2.2, 0.6, 1.5, 2.8, 0.9, 1.7];
+const SPRAY_HEIGHTS = [1.9, 1.1, 2.6, 1.3, 2.2, 1.0, 1.5, 2.8, 1.2, 1.7];
 
 export function buildSculpture({ seed = 11, detail = 1 } = {}) {
   const S = new Sculpt(detail);
