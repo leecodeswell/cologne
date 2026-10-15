@@ -459,8 +459,8 @@ export const reliefFrag = /* glsl */ `
     float rim = smoothstep(0.25, 1.6, curv) * (0.35 + 0.65 * toLight);
 
     float facingL = dot(n, L) - L.z;              // + toward the light, - away
-    float lit = 1.0 + 0.2 * clamp(facingL, -1.0, 1.0);
-    lit = mix(1.0, lit, 0.9) * mix(1.0, ao, 0.35);
+    float lit = 1.0 + 0.26 * clamp(facingL, -1.0, 1.0);
+    lit = mix(1.0, lit, 0.9) * mix(1.0, ao, 0.5); // soft, wide occlusion: layers read without hard shadows
     vec3 plaster = uColor * lit;
     // faint marble veins in the plaster, as on immersive-g.com
     plaster *= 1.0 - texture2D(tGrain, p).g * 0.014;

@@ -12,7 +12,7 @@
 //
 // No dependencies, so it can run in a worker (sculpture.worker.js).
 
-export const DEPTH_SCALE = 1.2; // global scale of the sculpture's height (higher = pops out more)
+export const DEPTH_SCALE = 1.7; // global scale of the sculpture's height (higher = pops out more)
 
 const TAU = Math.PI * 2;
 const PI = Math.PI;
@@ -496,7 +496,7 @@ function leafMotif(S, rand, x, y, len, ang, z0, phase, o = {}) {
       fold: o.fold ?? 0.3,
       twist: o.twist ?? (rand() - 0.5) * 1.2,
       midrib: 0.12,
-      veins: 0.05,
+      veins: o.veins ?? 0.05,
       lobes: o.lobes ?? 0,
       ruffle: o.ruffle ?? 0.05,
       seed: rand() * 9,
@@ -659,12 +659,159 @@ function bow(S, x, y, s, phase) {
 // side stems end in buds; blooms sit on the stem, lifted clearly above the
 // foliage so every layer reads: stem < leaves < petals.
 // ---------------------------------------------------------------------------
+// Anemone: broad, rounded, finely veined petals in two layers around a domed
+// centre ringed with stamens (the open flower of the crescent-spray study).
+function anemone(S, rand, x, y, R, z0, phase) {
+  const tw = rand() * TAU;
+  for (let k = 0; k < 2; k++) {
+    const n = k ? 5 : 6;
+    for (let i = 0; i < n; i++) {
+      const a = tw + (i / n) * TAU + k * 0.55 + (rand() - 0.5) * 0.15;
+      S.blade(
+        frame(x + Math.cos(a) * 0.06 * R, y + Math.sin(a) * 0.06 * R, z0 + k * 0.04 * R, a, R),
+        { len: k ? 0.7 : 0.88, wid: k ? 0.36 : 0.44, tilt: k ? 0.35 : 0.14, curl: 0.35, cup: 0.45, ruffle: 0.05, veins: 0.05, seed: i + k * 7, nu: 14, nv: 9, sway1: 0.5 },
+        phase
+      );
+    }
+  }
+  S.ellipsoid(frame(x, y, z0 + 0.06 * R, tw, R), 0.16, 0.16, 0.16, phase, 0.05, 14);
+  for (let i = 0; i < 18; i++) {
+    const a = tw + (i / 18) * TAU;
+    const r1 = 0.26 + (i % 2) * 0.05;
+    const ex = x + Math.cos(a) * r1 * R;
+    const ey = y + Math.sin(a) * r1 * R;
+    S.tube([[x + Math.cos(a) * 0.14 * R, y + Math.sin(a) * 0.14 * R, z0 + 0.1 * R], [ex, ey, z0 + 0.14 * R]], 0.012 * R, 0.008 * R, phase, 0.4, 4);
+    S.ellipsoid(frame(ex, ey, z0 + 0.14 * R, a, R), 0.03, 0.025, 0.03, phase, 0.4, 6);
+  }
+}
+
+// Dahlia: rings of narrow, pointed, quilled petals that stand up more steeply
+// toward a tight centre (the many-petalled flower of the crescent study).
+function dahlia(S, rand, x, y, R, z0, phase) {
+  const tw = rand() * TAU;
+  const rings = [
+    // n, length, half-width, tilt, base z
+    [16, 0.95, 0.11, 0.12, 0.0],
+    [14, 0.8, 0.11, 0.38, 0.05],
+    [12, 0.62, 0.1, 0.68, 0.1],
+    [10, 0.44, 0.09, 0.98, 0.15],
+  ];
+  rings.forEach(([n, len, wid, tilt, zr], k) => {
+    for (let i = 0; i < n; i++) {
+      const a = tw + (i / n) * TAU + k * 0.37;
+      S.blade(
+        frame(x + Math.cos(a) * 0.06 * R, y + Math.sin(a) * 0.06 * R, z0 + zr * R, a, R),
+        { shape: "leaf", len: len * (0.94 + rand() * 0.12), wid, tilt, curl: 0.5 - k * 0.1, cup: 1.4, fold: 0.2, nu: 10, nv: 6, sway1: 0.45 - k * 0.08 },
+        phase
+      );
+    }
+  });
+  S.ellipsoid(frame(x, y, z0 + 0.18 * R, tw, R), 0.1, 0.1, 0.14, phase, 0.05, 12);
+}
+
+// Thorned rose vine (the band study): two stems twisting around each other
+// along a line, passing over and under (real undercuts in relief), with
+// hooked thorns, sparse leaf pairs and small roses at both ends.
+function thornVine(S, rand, x0, x1, y, amp, z0, phase) {
+  const crossings = (x1 - x0) / 0.055;
+  const n = Math.ceil((x1 - x0) / 0.006);
+  for (const k of [0, 1]) {
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const u = i / n;
+      const ph = u * crossings * PI + k * PI;
+      pts.push([x0 + (x1 - x0) * u, y + Math.sin(ph) * amp, z0 + (1 + Math.cos(ph)) * amp * 0.5]);
+    }
+    S.tube(pts, 0.0034, 0.0028, phase, 0.05);
+    for (let i = 2; i < n - 1; i += 3 + Math.floor(rand() * 3)) {
+      const [px, py, pz] = pts[i];
+      const [qx, qy] = pts[i + 1];
+      const ang = Math.atan2(qy - py, qx - px);
+      const sd = rand() < 0.5 ? 1 : -1;
+      const a2 = ang + sd * 1.25 + PI * 0.12; // leans back along the stem, like a rose thorn
+      const L = 0.007 + rand() * 0.004;
+      S.tube([[px, py, pz + 0.002], [px + Math.cos(a2) * L, py + Math.sin(a2) * L, pz + 0.001]], 0.0022, 0.0002, phase, 0.1, 5);
+    }
+  }
+  for (let x = x0 + 0.07; x < x1 - 0.05; x += 0.09 + rand() * 0.07) {
+    const a = (rand() < 0.5 ? -PI / 2 : PI / 2) + (rand() - 0.5) * 0.8;
+    const L = 0.026 + rand() * 0.008;
+    for (const da of [-0.45, 0.45]) {
+      leafMotif(S, rand, x, y, L, a + da, z0 + 0.004, phase, { wid: 0.34, tilt: 0.4, bend: 0.4, veins: 0.09, lobes: 0.1 });
+    }
+  }
+  rose(S, rand, x0 + 0.014, y, 0.026, z0 + 0.004, phase);
+  rose(S, rand, x1 - 0.014, y, 0.024, z0 + 0.004, phase);
+}
+
+// Iris garland (the border study): a gently waving main stem with long lance
+// leaves, irises rising from it, buds, and side stems that curl up into
+// spiral tendrils.
+function garland(S, rand, x0, x1, y, z0, phase, o = {}) {
+  const { irises = [0.15, 0.5, 0.82], tendrils = [0.07, 0.33, 0.62, 0.92], buds = [0.26, 0.7] } = o;
+  const main = [];
+  const n = 48;
+  for (let i = 0; i <= n; i++) {
+    const u = i / n;
+    main.push([x0 + (x1 - x0) * u, y + Math.sin(u * TAU * 2.2 + 0.6) * 0.012, z0]);
+  }
+  S.tube(main, 0.0045, 0.0035, phase, 0.05);
+  const along = (u) => {
+    const p = catmullRom(main, u);
+    const q = catmullRom(main, Math.min(1, u + 0.01));
+    return { x: p.x, y: p.y, ang: Math.atan2(q.y - p.y, q.x - p.x) };
+  };
+
+  // long lance leaves sweeping along the stem
+  for (let u = 0.03; u < 0.98; u += 0.05 + rand() * 0.03) {
+    const p = along(u);
+    const sd = rand() < 0.5 ? 1 : -1;
+    const back = rand() < 0.3 ? PI : 0;
+    S.blade(
+      frame(p.x, p.y, z0 + 0.002, p.ang + back + sd * 0.35, 1),
+      { shape: "lance", len: 0.06 + rand() * 0.03, wid: 0.006, tilt: 0.2, bend: 0.3, twist: sd * 0.8, fold: 0.25, midrib: 0.25, veins: 0.04, nu: 14, nv: 5, sway1: 0.4 },
+      phase
+    );
+  }
+
+  // irises rising from the stem (their own stem and sword leaves included)
+  for (const u of irises) {
+    const p = along(u);
+    const s = 0.05 + rand() * 0.01;
+    iris(S, rand, p.x + (rand() - 0.5) * 0.02, p.y - s * 1.5, s, -PI / 2 + (rand() - 0.5) * 0.4, z0 + 0.004, phase);
+  }
+
+  // side stems curling into spiral tendrils
+  for (const u of tendrils) {
+    const p = along(u);
+    const sd = rand() < 0.5 ? 1 : -1;
+    const pts = [];
+    let a = -PI / 2 + sd * 0.5;
+    let step = 0.009;
+    let tx = p.x;
+    let ty = p.y;
+    for (let k = 0; k < 16; k++) {
+      pts.push([tx, ty, z0 + 0.003]);
+      tx += Math.cos(a) * step;
+      ty += Math.sin(a) * step;
+      a += sd * (0.08 + k * 0.045);
+      step *= 0.9;
+    }
+    S.tube(pts, 0.0024, 0.0008, phase, 0.5, 5);
+  }
+
+  for (const u of buds) {
+    const p = along(u);
+    bud(S, rand, p.x, p.y - 0.018, 0.022, -PI / 2 + (rand() - 0.5) * 0.8, z0 + 0.003, phase);
+  }
+}
+
 // Occupied circles [x, y, r] for the current build (see buildSculpture).
 let taken = [];
 const occupy = (x, y, r) => taken.push([x, y, r]);
 
 function spray(S, rand, path, o, phase) {
-  const { leaf = 0.05, z0 = 0.002, blooms = [], buds = [0.06, 0.94], blossoms = [], gap = 0.85 } = o;
+  const { leaf = 0.05, z0 = 0.002, blooms = [], buds = [0.06, 0.94], blossoms = [], gap = 0.85, leafOpts = {} } = o;
   const pts3 = path.map(([x, y]) => [x, y, z0]);
   const N = 80;
   const P = [];
@@ -708,7 +855,7 @@ function spray(S, rand, path, o, phase) {
     const L = leaf * grade * (0.92 + rand() * 0.16);
     const clear = placed.every((b) => Math.hypot(p.x - b.x, p.y - b.y) > b.R * 0.75);
     if (clear) {
-      leafMotif(S, rand, p.x, p.y, L, p.ang + sd * (0.62 + rand() * 0.18), z0 + 0.0015, phase, {
+      leafMotif(S, rand, p.x, p.y, L, p.ang + sd * (0.62 + rand() * 0.18), z0 + 0.004, phase, {
         wid: 0.24,
         tilt: 0.42,
         bend: 0.55,
@@ -716,6 +863,7 @@ function spray(S, rand, path, o, phase) {
         twist: sd * 0.45,
         fold: 0.32,
         ruffle: 0.02,
+        ...leafOpts,
       });
     }
     sd = -sd;
@@ -741,7 +889,7 @@ function spray(S, rand, path, o, phase) {
     const a0 = b.ang + rand() * 0.6;
     for (let i = 0; i < n; i++) {
       const a = a0 + (i / n) * TAU + (rand() - 0.5) * 0.4;
-      leafMotif(S, rand, b.x + Math.cos(a) * b.R * 0.35, b.y + Math.sin(a) * b.R * 0.35, b.R * (1.05 + rand() * 0.25), a, z0 + 0.003, phase, {
+      leafMotif(S, rand, b.x + Math.cos(a) * b.R * 0.35, b.y + Math.sin(a) * b.R * 0.35, b.R * (1.05 + rand() * 0.25), a, z0 + 0.008, phase, {
         wid: 0.25,
         tilt: 0.35,
         bend: 0.5,
@@ -749,7 +897,7 @@ function spray(S, rand, path, o, phase) {
         lobes: b.kind === peony ? 0.3 : 0,
       });
     }
-    const zb = z0 + 0.008;
+    const zb = z0 + 0.016; // blooms lifted well clear of their leaves
     if (b.kind === iris) iris(S, rand, b.x, b.y, b.R, b.ang - PI * 0.5, zb, phase);
     else if (b.kind === lily) lily(S, rand, b.x, b.y, b.R, b.ang + rand(), zb, phase);
     else b.kind(S, rand, b.x, b.y, b.R, zb, phase);
@@ -757,10 +905,10 @@ function spray(S, rand, path, o, phase) {
 }
 
 // ---------------------------------------------------------------------------
-// Composition: hand-placed, like a plaster ceiling rather than a carpet.
-// About 40-45% of the wall carries relief; the rest is quiet plaster, which
-// keeps the shadows light. The tile tiles vertically, so paths may run past
-// y = 0 or 1. The hero shows roughly y 0..0.56 of the tile.
+// Composition: hand-placed, like a plaster ceiling rather than a carpet, with
+// three studies as references: a crescent spray of mixed flowers, a thorned
+// rose vine band and a horizontal iris garland. The tile tiles vertically, so
+// paths may run past y = 0 or 1. The hero shows roughly y 0..0.56 of the tile.
 // ---------------------------------------------------------------------------
 export const BAND = { y: 0.9, half: 0.034 }; // inscription band (carved canvas)
 
@@ -772,9 +920,11 @@ export function buildSculpture({ seed = 11, detail = 1 } = {}) {
   const M = MEDALLION;
   taken = [];
 
-  // --- inscription fillets
-  for (const dy of [-BAND.half, BAND.half]) {
-    S.tube([[0.06, BAND.y + dy, 0], [0.5, BAND.y + dy, 0], [0.94, BAND.y + dy, 0]], 0.0034, 0.0034, phase());
+  // --- the inscription, framed above and below by thorned rose vines
+  for (const dy of [-BAND.half - 0.004, BAND.half + 0.004]) {
+    const p = phase();
+    thornVine(S, rand, 0.03, 0.97, BAND.y + dy, 0.006, 0.001, p);
+    for (let x = 0.03; x <= 0.97; x += 0.05) occupy(x, BAND.y + dy, 0.025);
   }
 
   // --- wreath and medallion (upper right of the hero)
@@ -785,121 +935,100 @@ export function buildSculpture({ seed = 11, detail = 1 } = {}) {
   laurel(S, rand, M.x + M.r * 0.2, M.y + M.r * 1.75, M.x + M.r * 2.15, M.y + M.r * 0.6, M.x + M.r * 0.7, M.y - M.r * 1.75, 0.05, 0.002, lp, 1);
   bow(S, M.x, M.y + M.r * 1.8, 0.05, lp);
 
-  // --- A: across the top, above the headline: a rose with a bud spray
-  spray(S, rand, [[-0.04, 0.14], [0.08, 0.06], [0.22, 0.05], [0.36, 0.1], [0.47, 0.04]], {
-    leaf: 0.05,
+  const veined = { veins: 0.09 };
+
+  // --- I: crescent spray across the top-left, above the headline: anemone,
+  // dahlia and a rose bud cluster at its heart, buds at both tips
+  spray(S, rand, [[0.48, 0.02], [0.35, 0.05], [0.22, 0.06], [0.1, 0.1], [0.03, 0.19], [0.01, 0.27]], {
+    leaf: 0.046,
+    leafOpts: veined,
     blooms: [
-      { t: 0.42, kind: rose, R: 0.062, side: 0.15 },
-      { t: 0.86, kind: blossom, R: 0.026 },
+      { t: 0.3, kind: anemone, R: 0.058, side: 0.2 },
+      { t: 0.5, kind: dahlia, R: 0.05, side: -0.35 },
+      { t: 0.68, kind: rose, R: 0.034, side: 0.3 },
     ],
-    blossoms: [0.2],
+    buds: [0.05, 0.95],
   }, phase());
 
-  // --- B: falls from the wreath down the right edge: a peony
-  spray(S, rand, [[0.6, 0.45], [0.72, 0.49], [0.86, 0.47], [0.95, 0.56], [1.04, 0.62]], {
-    leaf: 0.048,
-    blooms: [{ t: 0.5, kind: peony, R: 0.07, side: 0.2 }],
-    blossoms: [0.22, 0.8],
-  }, phase());
+  // --- the iris garland, a border across the bottom of the hero
+  garland(S, rand, -0.03, 1.03, 0.535, 0.002, phase());
+  for (let x = 0; x <= 1; x += 0.04) occupy(x, 0.51, 0.045);
 
-  // --- C: rises from the lower left: a magnolia and a lily
-  spray(S, rand, [[-0.05, 0.86], [0.06, 0.74], [0.13, 0.62], [0.26, 0.58], [0.36, 0.66]], {
-    leaf: 0.052,
+  // --- II: crescent spray down the lower right, mirrored: dahlia, anemone, rose
+  spray(S, rand, [[0.99, 0.6], [0.93, 0.66], [0.88, 0.74], [0.8, 0.79], [0.69, 0.81]], {
+    leaf: 0.044,
+    leafOpts: veined,
     blooms: [
-      { t: 0.35, kind: magnolia, R: 0.075, side: -0.15 },
-      { t: 0.8, kind: lily, R: 0.055, side: 0.3 },
+      { t: 0.32, kind: dahlia, R: 0.048, side: 0.3 },
+      { t: 0.55, kind: anemone, R: 0.054, side: -0.25 },
+      { t: 0.78, kind: rose, R: 0.032, side: 0.3 },
+    ],
+    buds: [0.95],
+  }, phase());
+
+  // --- III: rises from the lower left: a magnolia and a lily
+  spray(S, rand, [[-0.05, 0.84], [0.06, 0.74], [0.13, 0.64], [0.26, 0.6], [0.35, 0.66]], {
+    leaf: 0.05,
+    leafOpts: veined,
+    blooms: [
+      { t: 0.35, kind: magnolia, R: 0.072, side: -0.15 },
+      { t: 0.8, kind: lily, R: 0.05, side: 0.3 },
     ],
   }, phase());
 
   // --- the flacon with bergamot and lemon, centre
-  const F = { x: 0.5, y: 0.66, h: 0.15 };
+  const F = { x: 0.5, y: 0.68, h: 0.14 };
   flacon(S, F.x, F.y, F.h, phase());
-  spray(S, rand, [[0.56, 0.78], [0.62, 0.71], [0.66, 0.62], [0.63, 0.55]], {
-    leaf: 0.04,
+  spray(S, rand, [[0.57, 0.8], [0.62, 0.73], [0.65, 0.65], [0.62, 0.59]], {
+    leaf: 0.038,
+    leafOpts: veined,
     blooms: [],
     buds: [],
     blossoms: [0.25, 0.75],
   }, phase());
-  lemon(S, rand, 0.66, 0.73, 0.045, -0.5, 0.006, phase());
-  citrus(S, rand, 0.41, 0.77, 0.036, 0.004, phase());
+  lemon(S, rand, 0.66, 0.76, 0.042, -0.5, 0.006, phase());
+  citrus(S, rand, 0.4, 0.79, 0.034, 0.004, phase());
 
-  // --- D: lower right, under the flacon line: a rose and an iris
-  spray(S, rand, [[0.7, 0.86], [0.78, 0.78], [0.9, 0.74], [0.98, 0.8], [1.06, 0.76]], {
-    leaf: 0.046,
-    blooms: [
-      { t: 0.32, kind: rose, R: 0.056, side: -0.2 },
-      { t: 0.78, kind: iris, R: 0.05, side: 0.1 },
-    ],
-  }, phase());
-
-  // --- E: below the inscription, running up into the top of the tile
-  spray(S, rand, [[0.5, 0.99], [0.62, 0.95], [0.76, 0.98], [0.9, 1.04], [0.98, 1.12]], {
-    leaf: 0.044,
-    blooms: [{ t: 0.55, kind: magnolia, R: 0.058, side: 0.15 }],
+  // --- IV: below the inscription, running up into the top of the tile
+  spray(S, rand, [[0.5, 0.99], [0.62, 0.97], [0.76, 1.0], [0.9, 1.05], [0.98, 1.12]], {
+    leaf: 0.042,
+    leafOpts: veined,
+    blooms: [{ t: 0.55, kind: magnolia, R: 0.056, side: 0.15 }],
     blossoms: [0.2],
   }, phase());
-  spray(S, rand, [[0.02, 0.97], [0.12, 1.0], [0.24, 0.98], [0.33, 1.02]], {
+  spray(S, rand, [[0.02, 0.98], [0.12, 1.0], [0.24, 0.98], [0.34, 1.02]], {
     leaf: 0.04,
-    blooms: [{ t: 0.55, kind: peony, R: 0.05, side: -0.1 }],
+    leafOpts: veined,
+    blooms: [{ t: 0.55, kind: peony, R: 0.048, side: -0.1 }],
     buds: [0.08],
   }, phase());
 
-  // --- F: a slim spray under the hero text, so the corner is not bare
-  spray(S, rand, [[-0.04, 0.53], [0.06, 0.49], [0.17, 0.52], [0.27, 0.5]], {
+  // --- small sprays above and beside the wreath
+  spray(S, rand, [[0.55, 0.11], [0.62, 0.07], [0.71, 0.09], [0.8, 0.04], [0.88, 0.07]], {
     leaf: 0.036,
-    blooms: [{ t: 0.62, kind: blossom, R: 0.024 }],
-    buds: [0.9],
-  }, phase());
-
-  // --- G: above the wreath, along the top edge
-  spray(S, rand, [[0.5, 0.13], [0.58, 0.07], [0.69, 0.09], [0.8, 0.04], [0.88, 0.07]], {
-    leaf: 0.038,
+    leafOpts: veined,
     blooms: [{ t: 0.55, kind: blossom, R: 0.026 }],
     blossoms: [0.25],
   }, phase());
-
-  // --- H: down the right edge beside the wreath
   spray(S, rand, [[1.0, 0.13], [0.95, 0.2], [0.97, 0.28], [0.94, 0.34]], {
-    leaf: 0.034,
+    leaf: 0.032,
+    leafOpts: veined,
     blooms: [],
     buds: [0.92],
   }, phase());
 
-  // --- J: low centre, between the citrus and the lemon
-  spray(S, rand, [[0.33, 0.87], [0.43, 0.82], [0.53, 0.85], [0.63, 0.82]], {
-    leaf: 0.034,
-    blooms: [{ t: 0.5, kind: rose, R: 0.04, side: -0.15 }],
-    buds: [0.92],
-  }, phase());
-
-  // --- K: lower right, between the peony and the iris spray
-  spray(S, rand, [[0.72, 0.65], [0.8, 0.69], [0.88, 0.68], [0.95, 0.71]], {
-    leaf: 0.034,
-    blooms: [{ t: 0.45, kind: blossom, R: 0.028 }],
-    blossoms: [0.85],
-  }, phase());
-
-  // --- L: a second, quieter spray behind the headline's right side
-  spray(S, rand, [[0.4, 0.3], [0.46, 0.24], [0.52, 0.28], [0.56, 0.22]], {
-    leaf: 0.03,
-    blooms: [],
-    buds: [0.9],
-    blossoms: [0.4],
-  }, phase());
-
-  // --- small living accents in the quiet areas
-  butterfly(S, rand, 0.41, 0.47, 0.05, -1.0, 0.008, phase());
-  butterfly(S, rand, 0.28, 0.84, 0.042, 2.3, 0.008, phase());
-  bee(S, rand, 0.58, 0.18, 0.034, 0.6, 0.008, phase());
-  bee(S, rand, 0.9, 0.66, 0.03, -2.1, 0.008, phase());
-  citrus(S, rand, 0.95, 0.36, 0.034, 0.004, phase());
-  for (const [x, y, r] of [[0.41, 0.47, 0.04], [0.28, 0.84, 0.035], [0.58, 0.18, 0.03], [0.9, 0.66, 0.03], [0.95, 0.36, 0.04], [0.41, 0.77, 0.04], [0.66, 0.73, 0.05]]) occupy(x, y, r);
+  // --- small living accents
+  butterfly(S, rand, 0.46, 0.4, 0.046, -1.0, 0.008, phase());
+  butterfly(S, rand, 0.28, 0.83, 0.04, 2.3, 0.008, phase());
+  bee(S, rand, 0.57, 0.19, 0.032, 0.6, 0.008, phase());
+  bee(S, rand, 0.86, 0.62, 0.028, -2.1, 0.008, phase());
+  citrus(S, rand, 0.95, 0.4, 0.032, 0.004, phase());
+  for (const [x, y, r] of [[0.46, 0.4, 0.04], [0.28, 0.83, 0.035], [0.57, 0.19, 0.03], [0.86, 0.62, 0.03], [0.95, 0.4, 0.04], [0.4, 0.79, 0.04], [0.66, 0.76, 0.05]]) occupy(x, y, r);
   occupy(M.x, M.y, M.r * 1.9);
   occupy(F.x, F.y, 0.08);
 
   // --- a light scatter of sprigs, blossoms and buds in what is left, kept
-  // clear of everything above, of the inscription and of the area behind
-  // the headline, so the wall reads fuller without becoming a carpet
+  // clear of everything above and of the area behind the headline
   const wrapDy = (a, b) => {
     const d = Math.abs(a - b) % 1;
     return Math.min(d, 1 - d);
@@ -909,16 +1038,16 @@ export function buildSculpture({ seed = 11, detail = 1 } = {}) {
     for (let gx = 0.04; gx < 0.97; gx += 0.05) {
       const x = gx + (rand() - 0.5) * 0.03;
       const y = gy + (rand() - 0.5) * 0.03;
-      if (rand() < 0.12 || behindHeadline(x, y) || wrapDy(y, BAND.y) < BAND.half + 0.025) continue;
+      if (rand() < 0.12 || behindHeadline(x, y) || wrapDy(y, BAND.y) < BAND.half + 0.03) continue;
       if (taken.some(([tx, ty, tr]) => Math.hypot(x - tx, wrapDy(y, ty)) < tr + 0.016)) continue;
       const p = phase();
       const roll = rand();
       const a = rand() * TAU;
       if (roll < 0.5) {
-        // sprig: three small leaves on a short stem
+        // sprig: three small veined leaves on a short stem
         const L = 0.03 + rand() * 0.01;
         S.tube([[x - Math.cos(a) * L * 0.6, y - Math.sin(a) * L * 0.6, 0.002], [x, y, 0.002]], L * 0.07, L * 0.04, p);
-        for (let k = 0; k < 3; k++) leafMotif(S, rand, x, y, L * (k === 1 ? 1 : 0.8), a + (k - 1) * 0.7, 0.003, p, { wid: 0.26, tilt: 0.4, bend: 0.5 });
+        for (let k = 0; k < 3; k++) leafMotif(S, rand, x, y, L * (k === 1 ? 1 : 0.8), a + (k - 1) * 0.7, 0.003, p, { wid: 0.26, tilt: 0.4, bend: 0.5, veins: 0.09 });
       } else if (roll < 0.78) {
         blossom(S, rand, x, y, 0.022 + rand() * 0.007, 0.004, p);
       } else {
