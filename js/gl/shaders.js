@@ -62,16 +62,21 @@ export const flowFrag = /* glsl */ `
     if (uv.y < 0.0 || uv.y > 1.0) data = vec4(0.0);
     data *= pow(uDissipation, uDelta);
 
-    // organic, non-circular edges
+    // coarse, slowly drifting mask: the trail reveals fully in some patches
+    // and barely in others, which is what makes immersive-g's wall look like
+    // paper catching rather than a soft brush
     vec2 nuv = vUv * vec2(uAspect, 1.0);
-    float n1 = 0.25 + 0.75 * smoothstep(0.25, 0.9, noise(nuv * 5.0 + uTime * 0.12));
+    float coarse = noise(nuv * 3.2 + uTime * 0.05) * 0.7 + noise(nuv * 7.0 - uTime * 0.03) * 0.3;
+    float n1 = 0.15 + 0.85 * smoothstep(0.35, 0.85, coarse);
     float n2 = smoothstep(0.3, 0.95, noise(nuv * 3.0 - uTime * 0.08));
 
+    // stamp at full strength each frame (saturates almost at once, then
+    // decays): a quick, decisive pop instead of a slow fade-in
     float speed = length(uVelocity);
     float lift = 1.0 - pow(1.0 - min(1.0, speed * 1.4), 2.0);
     float f = stamp(vUv, uMouse, uFalloff);
     data.rg += uVelocity * f * uDelta;
-    data.b += lift * f * n1 * uDelta * 0.22;
+    data.b += lift * f * n1 * uDelta;
 
     float g = bloom(vUv, uGhost, uFalloff * 1.25, 3.1);
     data.a += uGhostAmount * g * n2 * uDelta * 0.05;
@@ -279,6 +284,49 @@ export const grainBakeFrag = /* glsl */ `
   }
 `;
 
+// One-time bake: crumpled paper. Two octaves of tileable Voronoi facets,
+// each tilted at random, so a bending sheet breaks into flat planes with
+// sharp creases instead of a smooth swell.
+//   rg = facet tilt, b = cell random (pop order), a = distance to a crease
+export const crumpleBakeFrag = /* glsl */ `
+  precision highp float;
+  varying vec2 vUv;
+
+  vec2 hash2(vec2 p) {
+    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return fract(sin(p) * 43758.5453);
+  }
+
+  // nearest jittered cell (wrapping every 'period' cells) and edge distance
+  void voronoi(vec2 uv, float period, out vec2 id, out float edge) {
+    vec2 g = uv * period;
+    vec2 i = floor(g), f = fract(g);
+    float d1 = 8.0, d2 = 8.0;
+    id = vec2(0.0);
+    for (int y = -1; y <= 1; y++) {
+      for (int x = -1; x <= 1; x++) {
+        vec2 o = vec2(float(x), float(y));
+        vec2 cell = mod(i + o, period);
+        vec2 r = o + 0.08 + hash2(cell) * 0.84 - f;
+        float d = dot(r, r);
+        if (d < d1) { d2 = d1; d1 = d; id = cell; }
+        else if (d < d2) { d2 = d; }
+      }
+    }
+    edge = sqrt(d2) - sqrt(d1);
+  }
+
+  void main() {
+    vec2 id1, id2;
+    float e1, e2;
+    voronoi(vUv, 36.0, id1, e1);
+    voronoi(vUv, 89.0, id2, e2);
+    vec2 t1 = hash2(id1 + 3.7) * 2.0 - 1.0;
+    vec2 t2 = hash2(id2 + 9.1) * 2.0 - 1.0;
+    gl_FragColor = vec4(t1 * 0.72 + t2 * 0.28, hash2(id1 + 1.3).x, min(e1, e2 * 1.6));
+  }
+`;
+
 // --------------------------------------------------------------------------
 // The plaster wall. Lit per pixel from the baked relief; the flowmap scales
 // the relief depth so motifs rise where the cursor has been. Every lighting
@@ -293,7 +341,13 @@ export const reliefFrag = /* glsl */ `
   uniform sampler2D tHorizonB; // horizon slopes, directions 4-7
   uniform sampler2D tShade;    // light horizon, cavity height, phase, sway
   uniform sampler2D tGrain;    // plaster grain
+  uniform sampler2D tCrumple;  // facet tilt, cell random, crease distance
   uniform sampler2D tFlow;
+  uniform vec2 uFlowTexel;   // 1 / flowmap size
+  uniform float uBulge;      // how far the sheet itself swells under the trail (tile widths)
+  uniform float uPersp;      // camera distance in tile widths (perspective push-out)
+  uniform float uCrumple;    // facet tilt while the sheet bends
+  uniform float uSnap;       // 0 = smooth rise, 1 = rises in five distinct beats
   uniform float uAspect;     // viewport height / width
   uniform float uTileScale;  // viewport width / tile width (<= 1 on phones)
   uniform float uTileX;      // left edge of the viewport on the tile
@@ -316,22 +370,53 @@ export const reliefFrag = /* glsl */ `
     float wallY = (1.0 - vUv.y) * uAspect * uTileScale + uScroll;
     vec2 p = vec2(uTileX + vUv.x * uTileScale, 1.0 - wallY);
 
+    // cursor + ghost/swelling lift add up (as on immersive-g.com)
     vec4 flow = texture2D(tFlow, vUv);
-    float lift = clamp(max(flow.b, flow.a), 0.0, 1.0);
+    float lift = clamp(flow.b + flow.a, 0.0, 1.0);
+
+    // the sheet itself swells under the trail like paper pushed from behind;
+    // its slope (tile units) comes from the flowmap gradient
+    vec2 fe = uFlowTexel * 4.0; // wide taps: the sheet bends softly, no hard rim
+    float lR = dot(texture2D(tFlow, vUv + vec2(fe.x, 0.0)).ba, vec2(1.0));
+    float lL = dot(texture2D(tFlow, vUv - vec2(fe.x, 0.0)).ba, vec2(1.0));
+    float lU = dot(texture2D(tFlow, vUv + vec2(0.0, fe.y)).ba, vec2(1.0));
+    float lD = dot(texture2D(tFlow, vUv - vec2(0.0, fe.y)).ba, vec2(1.0));
+    vec2 gradL = vec2(min(lR, 1.0) - min(lL, 1.0), min(lU, 1.0) - min(lD, 1.0)) / (2.0 * fe);
+    vec2 sheet = uBulge * uReveal * gradL / (uTileScale * vec2(1.0, uAspect));
+    float sheetH = uBulge * uReveal * lift;
+
+    // perspective: whatever rises toward the camera spreads away from the
+    // centre of the screen, so the wall visibly bulges instead of only
+    // changing shade. Find the wall point that lands on this pixel.
+    vec2 fromCentre = (vUv - 0.5) * vec2(1.0, uAspect) * uTileScale;
+    float lk0 = smoothstep(0.0, 1.0, clamp(lift * 1.3, 0.0, 1.0));
+    float h0 = texture2D(tRelief, p).r * mix(uRest, 1.0, lk0) * uReveal + sheetH;
+    p -= fromCentre * h0 / uPersp;
 
     vec4 relief = texture2D(tRelief, p);
     vec4 shade = texture2D(tShade, p);
+    vec4 crum = texture2D(tCrumple, p);
     float phase = shade.b;
     float sway = shade.a;
 
-    // motifs rise in a staggered order, then breathe while they are raised
-    float lk = clamp(lift * 1.3 - phase * 0.3, 0.0, 1.0);
+    // motifs rise in a staggered order (by motif and by paper facet), in five
+    // quick beats like a relief baked at five depths, then breathe while raised
+    float lk = clamp(lift * 1.35 - phase * 0.3 - crum.b * 0.18 + 0.08, 0.0, 1.0);
+    float beats = lk * 5.0;
+    float stepped = (floor(beats) + smoothstep(0.0, 0.4, fract(beats))) / 5.0;
+    lk = mix(lk, stepped, uSnap);
     lk = lk * lk * (3.0 - 2.0 * lk);
     float breathe = 1.0 + uAlive * sway * lk * sin(uTime * (1.1 + phase * 0.8) + phase * 37.0);
     float k = mix(uRest, 1.0, lk) * uReveal * breathe;
     float s = uDepth * k;
 
-    vec3 n = normalize(vec3(-relief.g * s, -relief.b * s, 1.0));
+    // crumpled paper: while the sheet bends (mid-rise, or on the swell's
+    // flanks) it breaks into tilted flat facets with sharp creases
+    float bend = 4.0 * lk * (1.0 - lk) * 0.7 + clamp(length(sheet) * 3.0, 0.0, 0.5);
+    vec2 facet = crum.rg * uCrumple * bend * uReveal;
+    float crease = (1.0 - smoothstep(0.0, 0.05, crum.a)) * bend;
+
+    vec3 n = normalize(vec3(-relief.g * s - sheet.x - facet.x, -relief.b * s - sheet.y - facet.y, 1.0));
     vec3 L = normalize(LIGHT);
     float diff = max(dot(n, L), 0.0);
 
@@ -361,8 +446,10 @@ export const reliefFrag = /* glsl */ `
     const float kd = 0.75;
     float lit = (amb * ao + kd * diff * shadow * mix(1.0, ao, 0.4)) / (amb + kd * L.z);
     vec3 plaster = uColor * lit * cavity;
-    // occluded plaster cools slightly, like a studio render's bounce light
-    plaster *= mix(vec3(0.95, 0.965, 1.0), vec3(1.0), ao);
+    // occluded plaster stays neutral grey, as on immersive-g.com
+    plaster *= mix(0.96, 1.0, ao);
+    // paper creases catch a thin dark line while the sheet is bending
+    plaster *= 1.0 - crease * 0.07;
     vec3 R = reflect(-L, n);
     float spec = pow(max(R.z, 0.0), 24.0);
     plaster += (rim * 0.09 + spec * 0.05) * lk * shadow;
@@ -386,9 +473,11 @@ export const reliefFrag = /* glsl */ `
 
     // grain, soft light falloff, dithering
     float grain = texture2D(tGrain, p).r;
-    col *= mix(0.965 + 0.06 * grain, 0.9 + 0.2 * grain, uDark);
-    float vign = length((vUv - vec2(0.25, 0.85)) * vec2(1.0, uAspect));
-    col *= mix(1.02 - 0.07 * vign, 1.12 - 0.35 * vign, uDark);
+    // plaster grain is faint (about ±1.5%, like immersive-g's plaster map)
+    col *= mix(0.985 + 0.03 * grain, 0.9 + 0.2 * grain, uDark);
+    // soft light from the top-left
+    float vign = length((vUv - vec2(0.0, 0.8)) * vec2(1.0, uAspect));
+    col *= mix(1.02 - 0.045 * vign, 1.12 - 0.35 * vign, uDark);
     col += (hash(gl_FragCoord.xy + fract(uTime)) - 0.5) / 255.0;
 
     gl_FragColor = vec4(col, 1.0);

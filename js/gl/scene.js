@@ -12,6 +12,7 @@ import {
   horizonFrag,
   shadeBakeFrag,
   grainBakeFrag,
+  crumpleBakeFrag,
   reliefFrag,
   videoVert,
   videoFrag,
@@ -77,8 +78,9 @@ class Flowmap {
       uGhost: { value: new THREE.Vector2(-1, -1) },
       uGhostAmount: { value: 0 },
       uAspect: { value: 1 },
-      uFalloff: { value: 0.24 },
-      uDissipation: { value: 0.955 },
+      // immersive-g.com's flowmap: radius 0.38 / 2, 4.7% fade per 60 fps frame
+      uFalloff: { value: 0.19 },
+      uDissipation: { value: 0.953 },
       uDelta: { value: 1 },
       uShift: { value: 0 },
       uTime: { value: 0 },
@@ -123,7 +125,7 @@ export class WallScene {
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.autoClear = false;
     // output is unconverted, so pass the plaster tone as raw values
-    this.renderer.setClearColor(new THREE.Color().setRGB(0xe7 / 255, 0xe3 / 255, 0xdc / 255), 1);
+    this.renderer.setClearColor(new THREE.Color().setRGB(0xe0 / 255, 0xe0 / 255, 0xe0 / 255), 1);
 
     // Bake budget: phones, small screens and weak machines get a 1024 bake
     // with lighter tessellation; float height maps where filterable.
@@ -273,10 +275,15 @@ export class WallScene {
     const grain = pass(grainBakeFrag, {});
     const grainRT = wrap(target(1024));
     run(grain, grainRT);
+
+    // crumpled-paper facets (nearest filtering keeps the creases sharp)
+    const crumple = pass(crumpleBakeFrag, {});
+    const crumpleRT = wrap(target(1024, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter }));
+    run(crumple, crumpleRT);
     r.setRenderTarget(null);
 
     for (const d of [geometry, material, carve, sculptRT, heightA, heightB, cavA, cavB]) d.dispose();
-    for (const p of [combine, blur, reliefBake, horizon, shade, grain]) p.material.dispose();
+    for (const p of [combine, blur, reliefBake, horizon, shade, grain, crumple]) p.material.dispose();
     this.bakeStats = { size: N, vertices: geometry.attributes.position.count, waitMs: Math.round(t1 - t0), totalMs: Math.round(performance.now() - t0) };
 
     this.reliefUniforms = {
@@ -285,7 +292,15 @@ export class WallScene {
       tHorizonB: { value: horizonB.texture },
       tShade: { value: shadeRT.texture },
       tGrain: { value: grainRT.texture },
+      tCrumple: { value: crumpleRT.texture },
       tFlow: { value: this.flow.texture },
+      uFlowTexel: { value: new THREE.Vector2(1 / FLOW_SIZE, 1 / FLOW_SIZE) },
+      uBulge: { value: this.reducedMotion ? 0 : 0.005 },
+      // immersive-g's camera sits ~0.85 tile widths back; our relief is
+      // deeper than theirs, so push out a third as much
+      uPersp: { value: 2.6 },
+      uCrumple: { value: this.reducedMotion ? 0 : 0.16 },
+      uSnap: { value: this.reducedMotion ? 0 : 0.55 },
       uAspect: { value: 1 },
       uTileScale: { value: 1 },
       uTileX: { value: 0 },
@@ -297,7 +312,8 @@ export class WallScene {
       uAO: { value: 1.1 },
       uAlive: { value: this.reducedMotion ? 0 : 0.12 },
       // raw sRGB values: THREE.Color would convert hex to linear and darken it
-      uColor: { value: new THREE.Vector3(0xe7 / 255, 0xe3 / 255, 0xdc / 255) },
+      // immersive-g.com's wall: neutral grey, about #e0e0e0 at rest
+      uColor: { value: new THREE.Vector3(0xe0 / 255, 0xe0 / 255, 0xe0 / 255) },
       // matches the navy-black of the film backdrops
       uDarkColor: { value: new THREE.Vector3(0x0b / 255, 0x0d / 255, 0x13 / 255) },
       uDark: { value: 0 },
@@ -485,12 +501,14 @@ export class WallScene {
     const dt = Math.min(deltaMs, 64) / 16.667;
     this.time += deltaMs / 1000;
 
-    // pointer easing + velocity
-    const ease = 1 - Math.pow(1 - 0.35, dt);
+    // pointer easing + velocity, with immersive-g.com's rates: the cursor
+    // eases at 0.4, velocity builds at 0.1 while moving and bleeds off at 0.04
+    const ease = 1 - Math.pow(1 - 0.4, dt);
     this.pointerSmooth.lerp(this.pointer, ease);
     const v = this.pointerSmooth.clone().sub(this.pointerPrev).multiplyScalar(36 / dt);
     v.x *= this.width / this.height;
-    this.velocity.lerp(v, v.lengthSq() > this.velocity.lengthSq() ? 0.5 : 0.08);
+    const rate = v.lengthSq() > 1e-6 ? 0.1 : 0.04;
+    this.velocity.lerp(v, 1 - Math.pow(1 - rate, dt));
     this.pointerPrev.copy(this.pointerSmooth);
 
     // scroll → wall offset, and shift the flow so trails stay on the wall

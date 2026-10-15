@@ -79,6 +79,12 @@ Phones, small screens and low-core/low-memory devices get a 1024² bake with 70%
 ## Tuning
 
 - **Relief depth at rest / when revealed:** `uRest` and `uDepth` in `js/gl/scene.js`
+- **Paper physics** (`js/gl/scene.js`):
+  - `uBulge`: how far the sheet itself swells under the trail
+  - `uPersp`: how strongly risen areas push outward from the screen centre (smaller = more perspective)
+  - `uCrumple`: how much the sheet breaks into tilted facets while it bends
+  - `uSnap`: how strongly the relief rises in five beats rather than smoothly
+- **Palette:** the wall tone is `uColor` in `js/gl/scene.js`, and the page tokens are at the top of `css/style.css`. Both use immersive-g.com's neutral whites: `#e8e8e8` page, `#030303` ink, and a wall of about `#e0e0e0` at rest.
 - **Shadow depth:** `uAO` (ambient occlusion strength) in `js/gl/scene.js`; cast-shadow and rim strength in `reliefFrag` in `js/gl/shaders.js`
 - **"Alive" motion:** `uAlive` (breathing amplitude) in `js/gl/scene.js`; the staggered bloom is the `lift * 1.3 - phase * 0.3` line in `reliefFrag`
 - **Sculpture height:** `DEPTH_SCALE` in `js/gl/sculpture.js`

@@ -2,11 +2,12 @@
    Tokens
    ========================================================================== */
 :root {
-  --plaster: #e7e3dc;
-  --ink: #1d1c1a;
-  --ink-soft: #6c675f;
-  --hair: rgba(29, 28, 26, 0.16);
-  --ivory: #f2eee6;
+  /* immersive-g.com's whites: #e8e8e8 page, #030303 ink, ink at 60% for labels */
+  --plaster: #e8e8e8;
+  --ink: #030303;
+  --ink-soft: #5f5f5f;
+  --hair: rgba(3, 3, 3, 0.14);
+  --ivory: #e8e8e8;
   --night: #07090d;
 
   --serif: "Cormorant Garamond", "Times New Roman", serif;
@@ -20,9 +21,9 @@
 
 /* Between the two films the wall turns to dark stone; text follows. */
 html.is-dark {
-  --ink: #ebe6dc;
-  --ink-soft: #8f8b84;
-  --hair: rgba(235, 230, 220, 0.16);
+  --ink: #e8e8e8;
+  --ink-soft: #8b8b8b;
+  --hair: rgba(232, 232, 232, 0.16);
   --bg: #0b0d13;
 }
 
@@ -692,7 +693,7 @@ main {
 }
 
 .opera__list:hover a {
-  color: rgba(29, 28, 26, 0.32);
+  color: rgba(3, 3, 3, 0.3);
 }
 
 .opera__list a:hover,
