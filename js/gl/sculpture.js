@@ -659,6 +659,10 @@ function bow(S, x, y, s, phase) {
 // side stems end in buds; blooms sit on the stem, lifted clearly above the
 // foliage so every layer reads: stem < leaves < petals.
 // ---------------------------------------------------------------------------
+// Occupied circles [x, y, r] for the current build (see buildSculpture).
+let taken = [];
+const occupy = (x, y, r) => taken.push([x, y, r]);
+
 function spray(S, rand, path, o, phase) {
   const { leaf = 0.05, z0 = 0.002, blooms = [], buds = [0.06, 0.94], blossoms = [], gap = 0.85 } = o;
   const pts3 = path.map(([x, y]) => [x, y, z0]);
@@ -689,6 +693,10 @@ function spray(S, rand, path, o, phase) {
     const side = b.side ?? 0;
     return { ...b, x: p.x - Math.sin(p.ang) * side * b.R, y: p.y + Math.cos(p.ang) * side * b.R, ang: p.ang };
   });
+
+  // record the space this spray takes, so the scattered sprigs keep clear
+  P.forEach((p, i) => i % 5 === 0 && occupy(p.x, p.y, leaf * 0.95));
+  placed.forEach((b) => occupy(b.x, b.y, b.R * 1.1));
 
   // leaves, alternating, graded by position along the stem
   let d = leaf * 0.5;
@@ -762,6 +770,7 @@ export function buildSculpture({ seed = 11, detail = 1 } = {}) {
   let motifId = 0;
   const phase = () => ((motifId++ * 0.618034) % 1);
   const M = MEDALLION;
+  taken = [];
 
   // --- inscription fillets
   for (const dy of [-BAND.half, BAND.half]) {
@@ -842,12 +851,82 @@ export function buildSculpture({ seed = 11, detail = 1 } = {}) {
     buds: [0.9],
   }, phase());
 
+  // --- G: above the wreath, along the top edge
+  spray(S, rand, [[0.5, 0.13], [0.58, 0.07], [0.69, 0.09], [0.8, 0.04], [0.88, 0.07]], {
+    leaf: 0.038,
+    blooms: [{ t: 0.55, kind: blossom, R: 0.026 }],
+    blossoms: [0.25],
+  }, phase());
+
+  // --- H: down the right edge beside the wreath
+  spray(S, rand, [[1.0, 0.13], [0.95, 0.2], [0.97, 0.28], [0.94, 0.34]], {
+    leaf: 0.034,
+    blooms: [],
+    buds: [0.92],
+  }, phase());
+
+  // --- J: low centre, between the citrus and the lemon
+  spray(S, rand, [[0.33, 0.87], [0.43, 0.82], [0.53, 0.85], [0.63, 0.82]], {
+    leaf: 0.034,
+    blooms: [{ t: 0.5, kind: rose, R: 0.04, side: -0.15 }],
+    buds: [0.92],
+  }, phase());
+
+  // --- K: lower right, between the peony and the iris spray
+  spray(S, rand, [[0.72, 0.65], [0.8, 0.69], [0.88, 0.68], [0.95, 0.71]], {
+    leaf: 0.034,
+    blooms: [{ t: 0.45, kind: blossom, R: 0.028 }],
+    blossoms: [0.85],
+  }, phase());
+
+  // --- L: a second, quieter spray behind the headline's right side
+  spray(S, rand, [[0.4, 0.3], [0.46, 0.24], [0.52, 0.28], [0.56, 0.22]], {
+    leaf: 0.03,
+    blooms: [],
+    buds: [0.9],
+    blossoms: [0.4],
+  }, phase());
+
   // --- small living accents in the quiet areas
   butterfly(S, rand, 0.41, 0.47, 0.05, -1.0, 0.008, phase());
   butterfly(S, rand, 0.28, 0.84, 0.042, 2.3, 0.008, phase());
   bee(S, rand, 0.58, 0.18, 0.034, 0.6, 0.008, phase());
   bee(S, rand, 0.9, 0.66, 0.03, -2.1, 0.008, phase());
   citrus(S, rand, 0.95, 0.36, 0.034, 0.004, phase());
+  for (const [x, y, r] of [[0.41, 0.47, 0.04], [0.28, 0.84, 0.035], [0.58, 0.18, 0.03], [0.9, 0.66, 0.03], [0.95, 0.36, 0.04], [0.41, 0.77, 0.04], [0.66, 0.73, 0.05]]) occupy(x, y, r);
+  occupy(M.x, M.y, M.r * 1.9);
+  occupy(F.x, F.y, 0.08);
+
+  // --- a light scatter of sprigs, blossoms and buds in what is left, kept
+  // clear of everything above, of the inscription and of the area behind
+  // the headline, so the wall reads fuller without becoming a carpet
+  const wrapDy = (a, b) => {
+    const d = Math.abs(a - b) % 1;
+    return Math.min(d, 1 - d);
+  };
+  const behindHeadline = (x, y) => ((x - 0.22) / 0.2) ** 2 + ((y - 0.31) / 0.12) ** 2 < 1;
+  for (let gy = 0; gy < 1; gy += 0.05) {
+    for (let gx = 0.04; gx < 0.97; gx += 0.05) {
+      const x = gx + (rand() - 0.5) * 0.03;
+      const y = gy + (rand() - 0.5) * 0.03;
+      if (rand() < 0.12 || behindHeadline(x, y) || wrapDy(y, BAND.y) < BAND.half + 0.025) continue;
+      if (taken.some(([tx, ty, tr]) => Math.hypot(x - tx, wrapDy(y, ty)) < tr + 0.016)) continue;
+      const p = phase();
+      const roll = rand();
+      const a = rand() * TAU;
+      if (roll < 0.5) {
+        // sprig: three small leaves on a short stem
+        const L = 0.03 + rand() * 0.01;
+        S.tube([[x - Math.cos(a) * L * 0.6, y - Math.sin(a) * L * 0.6, 0.002], [x, y, 0.002]], L * 0.07, L * 0.04, p);
+        for (let k = 0; k < 3; k++) leafMotif(S, rand, x, y, L * (k === 1 ? 1 : 0.8), a + (k - 1) * 0.7, 0.003, p, { wid: 0.26, tilt: 0.4, bend: 0.5 });
+      } else if (roll < 0.78) {
+        blossom(S, rand, x, y, 0.022 + rand() * 0.007, 0.004, p);
+      } else {
+        bud(S, rand, x, y, 0.026, a, 0.003, p);
+      }
+      occupy(x, y, 0.032);
+    }
+  }
 
   return S.build();
 }

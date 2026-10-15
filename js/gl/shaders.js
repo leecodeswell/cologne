@@ -335,7 +335,7 @@ export const crumpleBakeFrag = /* glsl */ `
 // --------------------------------------------------------------------------
 // The plaster wall. Lit per pixel from the baked relief; the flowmap scales
 // the relief depth so motifs rise where the cursor has been. Every lighting
-// term (normal, ambient occlusion, cast shadow, cavity, rim) is derived for
+// term (normal, a faint ambient occlusion, rim) is derived for
 // the current extrusion, so a half-risen petal is shaded like a shallower
 // carving rather than a faded deep one.
 // --------------------------------------------------------------------------
@@ -447,35 +447,26 @@ export const reliefFrag = /* glsl */ `
     float occl = dot(oa + ob, vec4(0.125));
     float ao = clamp(1.0 - uAO * occl, 0.0, 1.0);
 
-    // soft cast shadow: is the terrain toward the light steeper than the light?
-    float rise = L.z / length(L.xy);
-    // a light, crisp cast shadow (immersive-g's renders keep shadows pale)
-    float shadow = 1.0 - 0.16 * smoothstep(rise * 0.6, rise * 1.4, shade.r * s);
-
-    // cavity: crevices a touch darker, crests a touch brighter
-    float cav = (shade.g - relief.r) * s;
-    float cavity = 1.0 - clamp(cav * 12.0, 0.0, 0.06) + clamp(-cav * 6.0, 0.0, 0.04);
-
-    // crisp light on convex rims (petal edges, feather shafts, berries) and a
-    // fine dark line where forms meet, so edges read sharp, not muddy
+    // Plaster: white on white, lit like soft overcast daylight. There is no
+    // cast shadow, no cavity or contact darkening and no specular shine; the
+    // forms read only through a gentle brightening of slopes that face the
+    // light and a faint dimming of those turned away, plus a whisper of
+    // ambient occlusion deep inside folds.
+    float shadow = 1.0; // (kept for the dark stone below)
     float curv = -relief.a * s;
     vec2 nxy = n.xy + 1e-5;
     float toLight = max(dot(normalize(nxy), normalize(L.xy)), 0.0);
     float rim = smoothstep(0.25, 1.6, curv) * (0.35 + 0.65 * toLight);
-    float contact = smoothstep(0.5, 2.2, -curv);
 
-    const float amb = 0.74;
-    const float kd = 0.4;
-    float lit = (amb * ao + kd * diff * shadow * mix(1.0, ao, 0.3)) / (amb + kd * L.z);
-    vec3 plaster = uColor * lit * cavity;
-    plaster *= 1.0 - contact * 0.04;
+    float facingL = dot(n, L) - L.z;              // + toward the light, - away
+    float lit = 1.0 + 0.2 * clamp(facingL, -1.0, 1.0);
+    lit = mix(1.0, lit, 0.9) * mix(1.0, ao, 0.35);
+    vec3 plaster = uColor * lit;
     // faint marble veins in the plaster, as on immersive-g.com
     plaster *= 1.0 - texture2D(tGrain, p).g * 0.014;
-    // paper creases catch a thin dark line while the sheet is bending
-    plaster *= 1.0 - crease * 0.025;
+    // paper folds catch the faintest line while the sheet is bending
+    plaster *= 1.0 - crease * 0.01;
     vec3 R = reflect(-L, n);
-    float spec = pow(max(R.z, 0.0), 24.0);
-    plaster += (rim * 0.04 + spec * 0.025) * lk * shadow;
 
     // dark polished stone: little diffuse, glossy highlights catch the edges
     float edge = smoothstep(0.04, 0.4, 1.0 - n.z);
@@ -487,12 +478,6 @@ export const reliefFrag = /* glsl */ `
     stone += vec3(0.62, 0.66, 0.72) * (gloss * 0.8 + rimS * 0.35 + rim * 0.5) * k * shadow;
 
     vec3 col = mix(plaster, stone, uDark);
-
-    // iridescent, fresnel-masked tint on steep faces: strongest where the
-    // trail is fast, a faint pearl on anything raised
-    float vel = clamp(length(flow.rg) * 1.5, 0.0, 1.0);
-    vec3 hue = 0.5 + 0.5 * cos(6.2831 * (n.x * 0.6 + n.y * 0.4 + phase * 0.3 + vec3(0.0, 0.33, 0.67)));
-    col = mix(col, col * (0.8 + 0.4 * hue), edge * (vel * mix(0.22, 0.6, uDark) + lk * 0.07));
 
     // grain, soft light falloff, dithering
     float grain = texture2D(tGrain, p).r;

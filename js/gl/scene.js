@@ -315,8 +315,8 @@ export class WallScene {
       // holds the whole relief raised, for reviewing the design
       uRest: { value: new URLSearchParams(location.search).get("relief") === "full" ? 1 : this.reducedMotion ? 0.4 : 0.0 },
       uReveal: { value: 0 },
-      uDepth: { value: 1.0 },
-      uAO: { value: 0.35 },
+      uDepth: { value: 0.5 }, // gentle slopes: forms swell softly instead of turning dark sides
+      uAO: { value: 0.25 },
       uAlive: { value: this.reducedMotion ? 0 : 0.12 },
       // raw sRGB values: THREE.Color would convert hex to linear and darken it
       // immersive-g.com's wall: neutral grey, about #e0e0e0 at rest
