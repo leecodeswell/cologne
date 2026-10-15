@@ -43,7 +43,18 @@ It deploys as-is to any static host (GitHub Pages, Netlify, Vercel). There is no
 - **Relief depth at rest / when revealed:** `uRest` and `uDepth` in `js/gl/scene.js`
 - **Trail size and fade:** `uFalloff` and `uDissipation` in the `Flowmap` class
 - **Wall parallax:** `WALL_SPEED` in `js/gl/scene.js`
-- **Length of each pinned film chapter:** `end: … * 3.2` in `setupFilms()` in `js/main.js`
+- **Length of each pinned film chapter:** `end: … * 2.2` in `setupFilms()` in `js/main.js`
+- **Scroll smoothing:** `lerp` in the `Lenis` constructor in `js/main.js` (higher = snappier)
+
+## Videos for scroll-scrubbing
+
+Scrubbing seeks the video on every frame, so the files need frequent keyframes. Clips from video generators usually have just one keyframe, so every seek re-decodes from the start. That's slow and choppy, especially near the end.
+
+The files in `assets/video/` were re-encoded with a keyframe every 3 frames, at 20 Mbps H.264, keeping all 220 frames. If you swap in new footage, re-encode it the same way. For example, with ffmpeg:
+
+```bash
+ffmpeg -i input.mp4 -c:v libx264 -crf 16 -g 3 -keyint_min 3 -sc_threshold 0 -pix_fmt yuv420p -movflags +faststart -an output.mp4
+```
 
 ## Accessibility
 

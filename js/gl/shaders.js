@@ -101,15 +101,82 @@ export const blurFrag = /* glsl */ `
 `;
 
 // --------------------------------------------------------------------------
-// The plaster wall. Lit per pixel from the height map; the flowmap scales the
-// relief depth so motifs rise where the cursor has been.
+// One-time bake: height, slopes and self-shadowing (at full depth) packed
+// into one texture, so the per-frame wall shader reads it with a single tap.
+//   r = height above the wall, g/b = slope x/y, a = occlusion toward light
+// --------------------------------------------------------------------------
+const LIGHT_GLSL = `const vec3 LIGHT = vec3(-0.52, 0.62, 0.58);`;
+
+export const reliefBakeFrag = /* glsl */ `
+  precision highp float;
+  uniform sampler2D tHeight;
+  uniform vec2 uTexel;
+  uniform float uDepth;
+  uniform float uFlat;
+  varying vec2 vUv;
+  ${LIGHT_GLSL}
+
+  float H(vec2 p) { return texture2D(tHeight, p).r - uFlat; }
+
+  void main() {
+    vec2 p = vUv;
+    vec2 e = uTexel;
+    float hx = H(p + vec2(e.x, 0.0)) - H(p - vec2(e.x, 0.0));
+    float hy = H(p + vec2(0.0, e.y)) - H(p - vec2(0.0, e.y));
+    float h0 = H(p);
+
+    // march toward the light over the height field
+    vec3 L = normalize(LIGHT);
+    vec2 dir = normalize(L.xy);
+    float rise = L.z / length(L.xy);
+    float occ = 0.0;
+    for (int i = 1; i <= 12; i++) {
+      float t = float(i) * 2.4;
+      float d = (H(p + dir * e * t) - h0) * uDepth * 0.5 - t * rise;
+      occ = max(occ, d / t);
+    }
+    gl_FragColor = vec4(h0, hx, hy, occ);
+  }
+`;
+
+// One-time bake: plaster grain (fbm) that tiles exactly once per wall tile,
+// like the relief, so its repeat never shows as a seam on screen.
+export const grainBakeFrag = /* glsl */ `
+  precision highp float;
+  varying vec2 vUv;
+
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  // value noise that repeats every 'period' cells, so the texture tiles
+  float noise(vec2 p, float period) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    vec2 i1 = mod(i + 1.0, period);
+    i = mod(i, period);
+    return mix(mix(hash(i), hash(vec2(i1.x, i.y)), u.x),
+               mix(hash(vec2(i.x, i1.y)), hash(i1), u.x), u.y);
+  }
+
+  void main() {
+    float v = 0.0, a = 0.5, period = 220.0;
+    for (int i = 0; i < 2; i++) {
+      v += a * noise(vUv * period, period);
+      period *= 2.0;
+      a *= 0.5;
+    }
+    gl_FragColor = vec4(v / 0.75);
+  }
+`;
+
+// --------------------------------------------------------------------------
+// The plaster wall. Lit per pixel from the baked relief; the flowmap scales
+// the relief depth so motifs rise where the cursor has been.
 // --------------------------------------------------------------------------
 export const reliefFrag = /* glsl */ `
   precision highp float;
-  uniform sampler2D tHeight;
-  uniform sampler2D tCavity;
+  uniform sampler2D tRelief;  // baked: height, slope x, slope y, occlusion
+  uniform sampler2D tCavity;  // baked: wide-blurred height
+  uniform sampler2D tGrain;   // baked: plaster grain
   uniform sampler2D tFlow;
-  uniform vec2 uTexel;       // 1 / height map size
   uniform float uAspect;     // viewport height / width
   uniform float uScroll;     // wall offset in tile units
   uniform float uTime;
@@ -121,23 +188,9 @@ export const reliefFrag = /* glsl */ `
   uniform vec3 uDarkColor;
   uniform float uDark;       // 0 = plaster, 1 = dark polished stone
   varying vec2 vUv;
-
-  const vec3 LIGHT = vec3(-0.52, 0.62, 0.58);
+  ${LIGHT_GLSL}
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-  float noise(vec2 p) {
-    vec2 i = floor(p), f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x),
-               mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
-  }
-  float fbm(vec2 p) {
-    float v = 0.0, a = 0.5;
-    for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }
-    return v;
-  }
-
-  float H(vec2 p) { return texture2D(tHeight, p).r - uFlat; }
 
   void main() {
     // wall coordinates: x spans the viewport, y scrolls (tile is square)
@@ -149,28 +202,14 @@ export const reliefFrag = /* glsl */ `
     lift = lift * lift * (3.0 - 2.0 * lift);
     float k = mix(uRest, 1.0, lift) * uReveal;
 
-    // normal from height gradient, scaled by how far the relief is raised
-    vec2 e = uTexel;
-    float hx = H(p + vec2(e.x, 0.0)) - H(p - vec2(e.x, 0.0));
-    float hy = H(p + vec2(0.0, e.y)) - H(p - vec2(0.0, e.y));
+    vec4 relief = texture2D(tRelief, p);
+    float h0 = relief.r;
     float s = uDepth * k;
-    vec3 n = normalize(vec3(-hx * s, -hy * s, 1.0));
+    vec3 n = normalize(vec3(-relief.g * s, -relief.b * s, 1.0));
 
     vec3 L = normalize(LIGHT);
     float diff = max(dot(n, L), 0.0);
-
-    // soft self-shadowing: march toward the light over the height field
-    float h0 = H(p);
-    vec2 dir = normalize(L.xy);
-    float rise = L.z / length(L.xy);
-    float occ = 0.0;
-    for (int i = 1; i <= 10; i++) {
-      float t = float(i) * 2.6;
-      float hq = H(p + dir * e * t);
-      float d = (hq - h0) * uDepth * 0.5 - t * rise;
-      occ = max(occ, d / t);
-    }
-    float shadow = 1.0 - clamp(occ * 2.2 * k, 0.0, 0.42);
+    float shadow = 1.0 - clamp(relief.a * 2.2 * k, 0.0, 0.42);
 
     // cavity: darker in crevices, slightly brighter on crests
     float cav = (texture2D(tCavity, p).r - uFlat - h0) * k;
@@ -204,7 +243,7 @@ export const reliefFrag = /* glsl */ `
     col = mix(col, col * (0.8 + 0.4 * hue), vel * edge * mix(0.22, 0.6, uDark));
 
     // grain, soft light falloff, dithering
-    float grain = fbm(p * vec2(220.0, 220.0));
+    float grain = texture2D(tGrain, p).r;
     col *= mix(0.965 + 0.06 * grain, 0.9 + 0.2 * grain, uDark);
     float vign = length((vUv - vec2(0.25, 0.85)) * vec2(1.0, uAspect));
     col *= mix(1.02 - 0.07 * vign, 1.12 - 0.35 * vign, uDark);
@@ -285,16 +324,13 @@ export const videoFrag = /* glsl */ `
     float l = luma(col);
     col += (l - blurL) * 0.65;
 
-    // bloom + halation from two rings of highlight samples
+    // bloom + halation from a ring of highlight samples
     vec3 bloom = vec3(0.0);
-    for (int i = 0; i < 8; i++) {
-      float a = float(i) * 0.785398 + 0.39;
-      vec2 dir = vec2(cos(a), sin(a));
-      bloom += bright(uv + dir * texel * 7.0) * 0.6;
-      bloom += bright(uv + dir * texel * 18.0) * 0.4;
+    for (int i = 0; i < 6; i++) {
+      float a = float(i) * 1.0472 + 0.39;
+      bloom += bright(uv + vec2(cos(a), sin(a)) * texel * 11.0);
     }
-    bloom /= 8.0;
-    col += bloom * vec3(1.0, 0.9, 0.82) * 0.55;
+    col += bloom / 6.0 * vec3(1.0, 0.9, 0.82) * 0.55;
 
     // filmic curve: gentle S, rolled-off highlights, navy-tinted shadows
     // (clamp first: the cubic folds negative above 1.5 and bands the highlights)

@@ -4,6 +4,8 @@ import {
   fullscreenVert,
   flowFrag,
   blurFrag,
+  reliefBakeFrag,
+  grainBakeFrag,
   reliefFrag,
   videoVert,
   videoFrag,
@@ -175,24 +177,43 @@ export class WallScene {
     const cavity = wrap(target(small));
     run(height.texture, tmp2, 1 / small, 0, 5);
     run(tmp2.texture, cavity, 0, 1 / small, 5);
+
+    // Bake slopes + self-shadowing into one texture, and grain next to the
+    // cavity, so the per-frame shader needs only a few texture reads.
+    const DEPTH = 16;
+    const bake = pass(reliefBakeFrag, {
+      tHeight: { value: height.texture },
+      uTexel: { value: new THREE.Vector2(1 / HEIGHT_SIZE, 1 / HEIGHT_SIZE) },
+      uDepth: { value: DEPTH },
+      uFlat: { value: FLAT },
+    });
+    const relief = tmp; // reuse the blur scratch target
+    r.setRenderTarget(relief);
+    r.render(bake.scene, cam);
+    const grain = pass(grainBakeFrag, {});
+    const grainRT = wrap(target(1024));
+    r.setRenderTarget(grainRT);
+    r.render(grain.scene, cam);
     r.setRenderTarget(null);
 
     src.dispose();
-    tmp.dispose();
+    height.dispose();
     tmp2.dispose();
     blur.material.dispose();
+    bake.material.dispose();
+    grain.material.dispose();
 
     this.reliefUniforms = {
-      tHeight: { value: height.texture },
+      tRelief: { value: relief.texture },
       tCavity: { value: cavity.texture },
+      tGrain: { value: grainRT.texture },
       tFlow: { value: this.flow.texture },
-      uTexel: { value: new THREE.Vector2(1 / HEIGHT_SIZE, 1 / HEIGHT_SIZE) },
       uAspect: { value: 1 },
       uScroll: { value: 0 },
       uTime: { value: 0 },
       uRest: { value: this.reducedMotion ? 0.45 : 0.03 },
       uReveal: { value: 0 },
-      uDepth: { value: 16 },
+      uDepth: { value: DEPTH },
       uFlat: { value: FLAT },
       // raw sRGB values: THREE.Color would convert hex to linear and darken it
       uColor: { value: new THREE.Vector3(0xe7 / 255, 0xe3 / 255, 0xdc / 255) },
@@ -258,7 +279,8 @@ export class WallScene {
   resize() {
     this.width = window.innerWidth;
     this.height = window.innerHeight;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    // the wall is soft and the films are 1080p, so extra pixels buy little
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     this.renderer.setSize(this.width, this.height, false);
     const buffer = this.renderer.getDrawingBufferSize(new THREE.Vector2());
 

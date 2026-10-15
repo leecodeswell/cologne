@@ -43,7 +43,7 @@ try {
 // ---------------------------------------------------------------------------
 let lenis = null;
 if (!reduced && Lenis) {
-  lenis = new Lenis({ lerp: 0.085, wheelMultiplier: 0.9 });
+  lenis = new Lenis({ lerp: 0.12, wheelMultiplier: 1 });
   lenis.on("scroll", ScrollTrigger.update);
   gsap.ticker.add((time) => lenis.raf(time * 1000));
   lenis.stop();
@@ -55,7 +55,7 @@ document.querySelectorAll('a[href^="#"]').forEach((a) => {
     const target = document.querySelector(a.getAttribute("href"));
     if (!target) return;
     e.preventDefault();
-    if (lenis) lenis.scrollTo(target, { duration: 1.8 });
+    if (lenis) lenis.scrollTo(target, { duration: 1.2 });
     else target.scrollIntoView({ behavior: reduced ? "auto" : "smooth" });
   });
 });
@@ -169,7 +169,7 @@ gsap.ticker.add((_, deltaMs) => {
     const d = f.video.duration;
     if (!d || reduced) continue;
     const t = f.target * (d - 0.04);
-    f.shown += (t - f.shown) * 0.22;
+    f.shown += (t - f.shown) * 0.35;
     if (f.gl) f.gl.uniforms.uProgress.value = f.shown / d;
     if (!f.video.seeking && Math.abs(f.video.currentTime - f.shown) > 0.012) {
       f.video.currentTime = f.shown;
@@ -203,8 +203,8 @@ window.addEventListener("resize", () => scene?.resize());
 // ---------------------------------------------------------------------------
 function start() {
   const tl = gsap.timeline();
-  tl.to(".loader__mark", { autoAlpha: 0, y: -12, duration: 0.6, ease: "power2.in" })
-    .to(".loader", { autoAlpha: 0, duration: 1.0, ease: "power2.inOut" }, "-=0.1")
+  tl.to(".loader__mark", { autoAlpha: 0, y: -12, duration: 0.4, ease: "power2.in" })
+    .to(".loader", { autoAlpha: 0, duration: 0.7, ease: "power2.inOut" }, "-=0.1")
     .add(() => {
       body.classList.remove("is-loading");
       lenis?.start();
@@ -215,9 +215,9 @@ function start() {
     tl.from("[data-intro], .chrome", { autoAlpha: 0, duration: 0.8, stagger: 0.05 }, "-=0.4");
     return;
   }
-  tl.from(".hero__title .line > span", { yPercent: 115, duration: 1.8, ease: "expo.out", stagger: 0.12 }, "-=0.5")
-    .from(".hero__eyebrow, .hero__lede, .hero__foot", { autoAlpha: 0, y: 20, duration: 1.4, ease: "expo.out", stagger: 0.1 }, "-=1.5")
-    .from(".chrome, .progress", { autoAlpha: 0, duration: 1.2 }, "-=1.4");
+  tl.from(".hero__title .line > span", { yPercent: 115, duration: 1.3, ease: "expo.out", stagger: 0.09 }, "-=0.4")
+    .from(".hero__eyebrow, .hero__lede, .hero__foot", { autoAlpha: 0, y: 20, duration: 1.0, ease: "expo.out", stagger: 0.07 }, "-=1.1")
+    .from(".chrome, .progress", { autoAlpha: 0, duration: 0.9 }, "-=1.0");
 
   gsap.to(".hero__foot", {
     autoAlpha: 0,
@@ -266,7 +266,7 @@ function setupFilms() {
       scrollTrigger: {
         trigger: pin,
         start: "top top",
-        end: () => `+=${window.innerHeight * 3.2}`,
+        end: () => `+=${window.innerHeight * 2.2}`,
         pin: true,
         scrub: true,
         invalidateOnRefresh: true,
@@ -311,8 +311,8 @@ function setupReveals() {
   gsap.utils.toArray("[data-reveal]").forEach((el) => {
     gsap.from(el, {
       autoAlpha: 0,
-      y: 46,
-      duration: 1.6,
+      y: 30,
+      duration: 1.1,
       ease: "expo.out",
       scrollTrigger: { trigger: el, start: "top 90%" },
     });
