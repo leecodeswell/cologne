@@ -627,7 +627,7 @@ function laurel(S, rand, x0, y0, cx, cy, x1, y1, leafLen, z0, phase, side = 0) {
 
 // Medallion disc: bevelled edge, raised bead rim and a fine inner ring.
 // The "LI" letters come from the carved canvas layer (heightmap.js).
-export const MEDALLION = { x: 0.72, y: 0.27, r: 0.098, h: 0.11 }; // h = field height / r
+export const MEDALLION = { x: 0.72, y: 0.27, r: 0.085, h: 0.11 }; // h = field height / r
 function medallion(S, phase) {
   const { x, y, r, h } = MEDALLION;
   S.disc(
