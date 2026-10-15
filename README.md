@@ -2,7 +2,7 @@
 
 A minimal portfolio site for luxury fragrance films. All copy is Latin placeholder text.
 
-- **Bas-relief wall.** A plaster background in WebGL. The cursor raises a deeply sculpted relief out of the wall, and the raised trail then sinks back. The relief is a dense garden built as real 3D geometry: garden roses and peonies with layered cupped petals, lilies with recurved petals and stamens, bearded irises, vines with tendrils and buds, butterflies, bees, bergamot slices, a lemon, a faceted perfume flacon, a laurel wreath around the "LI" medallion, and a carved Roman inscription. Random swellings and a "ghost cursor" keep the wall moving on its own. While raised, motifs bloom in a staggered order, and petals and wings breathe gently.
+- **Bas-relief wall.** A plaster background in WebGL. At rest the wall is blank plaster. The cursor raises a soft, embossed-paper relief out of it, and the raised trail then sinks back. The relief is a refined, neoclassical garden built as real 3D geometry, in the manner of a Robert Adam ceiling or Wedgwood jasperware. Flowing S-curved sprays carry garden roses, peonies, magnolias, lilies and bearded irises above graded leaves and buds. There are also butterflies, bees, bergamot slices, a lemon, a faceted perfume flacon, a laurel wreath around the "LI" medallion, and a carved Roman inscription. About half the wall is left as quiet plaster. Every few seconds a small patch swells up on its own and sinks back, so the wall feels alive between cursor movements. While raised, motifs bloom in a staggered order, and petals and wings breathe gently.
 - **Dark interlude.** Between the two films the wall turns to dark polished stone, and the text turns light. The switch happens while a film fills the screen, so it's never seen.
 - **Film chapters.** Each video is pinned while you scroll. It grows from a framed card to full-screen, and the scroll position scrubs through the clip. Latin captions appear in sequence.
 - **Glass ripple.** The same cursor trail refracts the films with a soft chromatic split.
@@ -39,7 +39,7 @@ It deploys as-is to any static host (GitHub Pages, Netlify, Vercel). There is no
 ## How the cursor effect works
 
 1. **Bake the relief once.** At load, the sculpture is rendered into a height map, and the lighting data for it is baked (see below).
-2. **Paint the cursor trail.** A 256×256 flowmap is updated every frame, swapping between two buffers. The cursor stamps its velocity and a "lift" value into it, and every frame the old values fade by about 4.5%. The ghost cursor and the random swellings stamp into it too, with noise-warped, irregular edges.
+2. **Paint the cursor trail.** A 256×256 flowmap is updated every frame, swapping between two buffers. The cursor stamps its velocity and a "lift" value into it, and every frame the old values fade by about 4.5%. The occasional small swellings stamp into it too, with noise-warped, irregular edges.
 3. **Raise and light the relief.** The wall shader reads the lift under each pixel and scales the relief from a faint 1.5% up to full depth. It then lights the plaster for that exact depth: normals, ambient occlusion, a soft cast shadow, cavity shading, and highlights on convex rims.
 
 ## How the relief is made
@@ -53,7 +53,7 @@ The relief is real 3D geometry, rendered once into textures. Nothing is rasteris
    - polar **discs** (medallion, citrus slices);
    - half **lathes** (the faceted flacon).
 
-   The composition places the medallion, wreath, flacon and birds by hand. It then scatters blooms with overlap allowed, grows wandering vines underneath, and fills every remaining gap with leaf sprays, blossoms, buds and berries using an occupancy grid. Density fades out behind the hero headline, and nothing grows inside the inscription band. About 560k vertices are built in roughly 0.3 s, in a worker that starts as the page loads, so the build overlaps the video preload.
+   The composition is placed by hand, like a plaster ceiling rather than a carpet: the medallion and wreath, the flacon, and seven sprays. Each spray is a tapered stem along an S-curve, with alternate leaves graded smaller toward the tips, buds on short side stems, and blooms lifted above their own collar of leaves (layers: stem < leaves < petals). About 40–45% of the wall carries relief, and the area behind the hero headline stays quiet. About 110k vertices are built in under 0.1 s, in a worker.
 2. **Height pass.** An orthographic camera looks straight down at the sculpture. It renders height, a per-motif phase and a "sway" weight into a 4× MSAA float target. The depth test keeps the topmost surface, so overhanging petals hide what lies under them, which gives real undercuts. Three copies, at y −1, 0 and +1, make the tile wrap seamlessly. The canvas lettering (`heightmap.js`) is then added, and the result is lightly blurred.
 3. **Lighting bake.** Three passes run once:
    - **slopes + curvature** at full resolution;
@@ -79,6 +79,8 @@ Phones, small screens and low-core/low-memory devices get a 1024² bake with 70%
 
 ## Tuning
 
+- **Review the whole design:** open the site with `?relief=full` to hold the entire relief raised.
+- **Composition:** the sprays and their blooms are listed in `buildSculpture()` in `js/gl/sculpture.js`, and `DEPTH_SCALE` sets how far everything stands off the wall.
 - **Relief depth at rest / when revealed:** `uRest` and `uDepth` in `js/gl/scene.js`
 - **Paper physics** (`js/gl/scene.js`):
   - `uBulge`: how far the sheet itself swells under the trail

@@ -425,11 +425,17 @@ export const reliefFrag = /* glsl */ `
 
     // crumpled paper: while the sheet bends (mid-rise, or on the swell's
     // flanks) it breaks into tilted flat facets with sharp creases
-    float bend = 4.0 * lk * (1.0 - lk) * 0.7 + clamp(length(sheet) * 3.0, 0.0, 0.5);
+    // (raised paper keeps a gentle crumple too, so shapes never read as hard plastic)
+    float bend = 4.0 * lk * (1.0 - lk) * 0.7 + clamp(length(sheet) * 3.0, 0.0, 0.5) + lk * 0.3;
     vec2 facet = crum.rg * uCrumple * bend * uReveal;
-    float crease = (1.0 - smoothstep(0.0, 0.05, crum.a)) * bend;
+    float crease = (1.0 - smoothstep(0.0, 0.07, crum.a)) * bend;
 
-    vec3 n = normalize(vec3(-relief.g * s - sheet.x - facet.x, -relief.b * s - sheet.y - facet.y, 1.0));
+    // paper fibre: a fine, soft tooth across the whole sheet
+    vec2 ge = vec2(1.0 / 1024.0, 0.0);
+    vec2 fibre = vec2(texture2D(tGrain, p + ge.xy).r - texture2D(tGrain, p - ge.xy).r,
+                      texture2D(tGrain, p + ge.yx).r - texture2D(tGrain, p - ge.yx).r) * 0.05 * uReveal;
+
+    vec3 n = normalize(vec3(-relief.g * s - sheet.x - facet.x - fibre.x, -relief.b * s - sheet.y - facet.y - fibre.y, 1.0));
     vec3 L = normalize(LIGHT);
     float diff = max(dot(n, L), 0.0);
 
@@ -444,11 +450,11 @@ export const reliefFrag = /* glsl */ `
     // soft cast shadow: is the terrain toward the light steeper than the light?
     float rise = L.z / length(L.xy);
     // a light, crisp cast shadow (immersive-g's renders keep shadows pale)
-    float shadow = 1.0 - 0.3 * smoothstep(rise * 0.75, rise * 1.25, shade.r * s);
+    float shadow = 1.0 - 0.16 * smoothstep(rise * 0.6, rise * 1.4, shade.r * s);
 
     // cavity: crevices a touch darker, crests a touch brighter
     float cav = (shade.g - relief.r) * s;
-    float cavity = 1.0 - clamp(cav * 18.0, 0.0, 0.12) + clamp(-cav * 6.0, 0.0, 0.05);
+    float cavity = 1.0 - clamp(cav * 12.0, 0.0, 0.06) + clamp(-cav * 6.0, 0.0, 0.04);
 
     // crisp light on convex rims (petal edges, feather shafts, berries) and a
     // fine dark line where forms meet, so edges read sharp, not muddy
@@ -458,18 +464,18 @@ export const reliefFrag = /* glsl */ `
     float rim = smoothstep(0.25, 1.6, curv) * (0.35 + 0.65 * toLight);
     float contact = smoothstep(0.5, 2.2, -curv);
 
-    const float amb = 0.64;
-    const float kd = 0.52;
+    const float amb = 0.74;
+    const float kd = 0.4;
     float lit = (amb * ao + kd * diff * shadow * mix(1.0, ao, 0.3)) / (amb + kd * L.z);
     vec3 plaster = uColor * lit * cavity;
-    plaster *= 1.0 - contact * 0.1;
+    plaster *= 1.0 - contact * 0.04;
     // faint marble veins in the plaster, as on immersive-g.com
     plaster *= 1.0 - texture2D(tGrain, p).g * 0.014;
     // paper creases catch a thin dark line while the sheet is bending
-    plaster *= 1.0 - crease * 0.07;
+    plaster *= 1.0 - crease * 0.025;
     vec3 R = reflect(-L, n);
     float spec = pow(max(R.z, 0.0), 24.0);
-    plaster += (rim * 0.09 + spec * 0.05) * lk * shadow;
+    plaster += (rim * 0.04 + spec * 0.025) * lk * shadow;
 
     // dark polished stone: little diffuse, glossy highlights catch the edges
     float edge = smoothstep(0.04, 0.4, 1.0 - n.z);

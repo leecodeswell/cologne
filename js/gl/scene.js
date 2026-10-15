@@ -21,7 +21,7 @@ import {
 const WALL_SPEED = 0.45; // wall parallax relative to page scroll
 const MIN_TILE = 760; // css px: on narrower screens the tile overflows to the left
 const FLOW_SIZE = 256;
-const SWELL_COUNT = 6; // random swellings alive at once
+const SWELL_COUNT = 2; // small random swellings alive at once
 
 const quad = new THREE.PlaneGeometry(1, 1);
 
@@ -244,7 +244,7 @@ export class WallScene {
       blur.material.uniforms.uSigma.value = sigma;
       run(blur, output);
     };
-    const sigma = N >= 2048 ? 0.7 : 0.5; // light blur keeps edges crisp
+    const sigma = N >= 2048 ? 1.6 : 1.0; // rounded edges, like embossed paper rather than cut plastic
     blurRun(heightA.texture, heightB, 1 / N, 0, sigma);
     blurRun(heightB.texture, heightA, 0, 1 / N, sigma);
     const height = heightA.texture;
@@ -276,10 +276,14 @@ export class WallScene {
     const grainRT = wrap(target(1024));
     run(grain, grainRT);
 
-    // crumpled-paper facets (nearest filtering keeps the creases sharp)
+    // crumpled-paper facets, softened so the creases read as folds in paper
     const crumple = pass(crumpleBakeFrag, {});
-    const crumpleRT = wrap(target(1024, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter }));
+    const crumpleRT = wrap(target(1024));
+    const crumpleTmp = wrap(target(1024));
     run(crumple, crumpleRT);
+    blurRun(crumpleRT.texture, crumpleTmp, 1 / 1024, 0, 2.2);
+    blurRun(crumpleTmp.texture, crumpleRT, 0, 1 / 1024, 2.2);
+    crumpleTmp.dispose();
     r.setRenderTarget(null);
 
     for (const d of [geometry, material, carve, sculptRT, heightA, heightB, cavA, cavB]) d.dispose();
@@ -307,10 +311,12 @@ export class WallScene {
       uTileX: { value: 0 },
       uScroll: { value: 0 },
       uTime: { value: 0 },
-      uRest: { value: this.reducedMotion ? 0.4 : 0.0 }, // blank plaster at rest, as on immersive-g.com
+      // blank plaster at rest, as on immersive-g.com; ?relief=full in the URL
+      // holds the whole relief raised, for reviewing the design
+      uRest: { value: new URLSearchParams(location.search).get("relief") === "full" ? 1 : this.reducedMotion ? 0.4 : 0.0 },
       uReveal: { value: 0 },
       uDepth: { value: 1.0 },
-      uAO: { value: 0.55 },
+      uAO: { value: 0.35 },
       uAlive: { value: this.reducedMotion ? 0 : 0.12 },
       // raw sRGB values: THREE.Color would convert hex to linear and darken it
       // immersive-g.com's wall: neutral grey, about #e0e0e0 at rest
@@ -415,92 +421,42 @@ export class WallScene {
     this.scrollY = y;
   }
 
-  // Ghost cursor: drifts along random arcs so the wall breathes when idle.
-  startGhost(gsap) {
-    if (this.reducedMotion) return;
-    const loop = () => {
-      const from = { x: Math.random() * 0.8 + 0.1, y: Math.random() * 0.8 + 0.1 };
-      const angle = Math.random() * Math.PI * 2;
-      const dist = 0.25 + Math.random() * 0.3;
-      const to = {
-        x: Math.min(0.95, Math.max(0.05, from.x + Math.cos(angle) * dist)),
-        y: Math.min(0.95, Math.max(0.05, from.y + Math.sin(angle) * dist)),
-      };
-      const ctrl = { x: (from.x + to.x) / 2 + (Math.random() - 0.5) * 0.4, y: (from.y + to.y) / 2 + (Math.random() - 0.5) * 0.4 };
-      const state = { t: 0 };
-      gsap.to(state, {
-        t: 1,
-        duration: 2.6 + Math.random() * 1.6,
-        ease: "sine.inOut",
-        onUpdate: () => {
-          const t = state.t;
-          const u = 1 - t;
-          this.ghost.x = u * u * from.x + 2 * u * t * ctrl.x + t * t * to.x;
-          this.ghost.y = u * u * from.y + 2 * u * t * ctrl.y + t * t * to.y;
-          this.ghost.amount = Math.sin(Math.PI * t);
-        },
-        onComplete: () => {
-          this.ghost.amount = 0;
-          gsap.delayedCall(0.4 + Math.random() * 1.6, loop);
-        },
-      });
-    };
-    loop();
-  }
-
-  // Random swellings: each slot repeatedly picks a spot on screen, swells it
-  // out of the wall and lets it sink back, independent of the cursor.
+  // Random swellings: now and then a small patch of the wall swells up on its
+  // own and sinks back, so the wall feels alive between cursor movements.
+  // The relief is otherwise revealed only by the cursor.
   startSwells(gsap) {
     if (this.reducedMotion) return;
     this.swells.forEach((swell, i) => {
       const loop = () => {
-        swell.x = 0.06 + Math.random() * 0.88;
-        swell.y = (0.08 + Math.random() * 0.84) * this.height + this.scrollY * WALL_SPEED;
-        swell.radius = 0.12 + Math.random() * 0.16;
-        const peak = 0.7 + Math.random() * 0.5;
+        swell.x = 0.08 + Math.random() * 0.84;
+        swell.y = (0.1 + Math.random() * 0.8) * this.height + this.scrollY * WALL_SPEED;
+        swell.radius = 0.05 + Math.random() * 0.045;
+        const peak = 0.55 + Math.random() * 0.35;
         gsap.fromTo(
           swell,
           { amount: 0 },
           {
             amount: peak,
-            duration: 1.6 + Math.random() * 1.6,
+            duration: 1.4 + Math.random() * 1.0,
             ease: "sine.inOut",
             yoyo: true,
             repeat: 1,
-            repeatDelay: 0.2 + Math.random() * 1.2,
-            onComplete: () => gsap.delayedCall(0.5 + Math.random() * 3, loop),
+            repeatDelay: 0.3 + Math.random() * 0.6,
+            onComplete: () => gsap.delayedCall(3 + Math.random() * 5, loop),
           }
         );
       };
-      gsap.delayedCall(0.8 + i * 0.9 + Math.random() * 1.2, loop);
+      gsap.delayedCall(2 + i * 2.5 + Math.random() * 2, loop);
     });
   }
 
-  // Intro: the wall surfaces, then a sweep raises the wreath behind the title.
+  // Intro: the wall surfaces as blank plaster; after that the relief appears
+  // only under the cursor and in the occasional small swelling.
   intro(gsap) {
     const tl = gsap.timeline();
     tl.to(this.reveal, { value: 1, duration: 1.6, ease: "sine.out" }, 0);
     if (!this.reducedMotion) {
-      const s = { t: 0 };
-      tl.to(
-        s,
-        {
-          t: 1,
-          duration: 2.2,
-          ease: "power2.inOut",
-          onUpdate: () => {
-            const a = s.t * Math.PI * 1.6 - 0.6;
-            this.ghost.x = 0.72 + Math.cos(a) * 0.16;
-            this.ghost.y = 0.55 + Math.sin(a) * 0.22;
-            this.ghost.amount = 1.6 * Math.sin(Math.PI * s.t);
-          },
-          onComplete: () => {
-            this.startGhost(gsap);
-            this.startSwells(gsap);
-          },
-        },
-        0.2
-      );
+      tl.add(() => this.startSwells(gsap), 1.2);
     }
     return tl;
   }

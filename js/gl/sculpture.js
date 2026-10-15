@@ -1,6 +1,6 @@
 // Builds the bas-relief as real 3D geometry: cupped, curled petals, leaves
-// with a midrib, arch and twist, tapered stems and vines, birds with fanned
-// feathers, citrus slices and a faceted flacon. The scene is rendered once,
+// with a midrib, arch and twist, tapered stems in S-curved sprays, magnolias,
+// butterflies, bees, citrus slices and a faceted flacon. The scene is rendered once,
 // top-down and orthographic, into a height map (see scene.js).
 //
 // Coordinates: x runs across the tile (0..1), y runs down the tile (0..1, as
@@ -12,7 +12,7 @@
 //
 // No dependencies, so it can run in a worker (sculpture.worker.js).
 
-export const DEPTH_SCALE = 0.8; // global compression of the sculpture's height
+export const DEPTH_SCALE = 1.2; // global scale of the sculpture's height (higher = pops out more)
 
 const TAU = Math.PI * 2;
 const PI = Math.PI;
@@ -381,7 +381,7 @@ function peony(S, rand, x, y, R, z0, phase) {
       const T = frame(x + Math.cos(a) * r0 * R, y + Math.sin(a) * r0 * R, z0 + zr * R, a, R);
       S.blade(
         T,
-        { len: len * (0.85 + rand() * 0.3), wid, tilt, curl, cup, ruffle: 0.22, rufFreq: 7 + rand() * 4, seed: rand() * 9, sway1: 0.5 - k * 0.08 },
+        { len: len * (0.88 + rand() * 0.24), wid, tilt, curl, cup, ruffle: 0.13, rufFreq: 6 + rand() * 3, seed: rand() * 9, sway1: 0.5 - k * 0.08 },
         phase
       );
     }
@@ -436,6 +436,26 @@ function lily(S, rand, x, y, s, ang, z0, phase) {
   S.tube([[x, y, z0 + 0.15 * s], [x + Math.cos(ang + 3.6) * 0.3 * s, y + Math.sin(ang + 3.6) * 0.3 * s, z0 + 0.35 * s]], 0.022 * s, 0.018 * s, phase, 0.3, 5);
 }
 
+// Magnolia: three open outer tepals, a cup of six broad inner tepals and
+// three tight innermost ones around a tall cone. Smooth, spoon-shaped petals
+// read as the most "classical" flower in the set.
+function magnolia(S, rand, x, y, R, z0, phase) {
+  const tw = rand() * TAU;
+  for (let i = 0; i < 3; i++) {
+    const a = tw + (i / 3) * TAU;
+    S.blade(frame(x + Math.cos(a) * 0.08 * R, y + Math.sin(a) * 0.08 * R, z0, a, R), { len: 0.98, wid: 0.4, tilt: 0.12, curl: 0.55, cup: 0.65, ruffle: 0.03, midrib: -0.08, seed: i, nu: 16, nv: 9, sway1: 0.55 }, phase);
+  }
+  for (let i = 0; i < 6; i++) {
+    const a = tw + 0.52 + (i / 6) * TAU + (rand() - 0.5) * 0.12;
+    S.blade(frame(x + Math.cos(a) * 0.07 * R, y + Math.sin(a) * 0.07 * R, z0 + 0.07 * R, a, R), { len: 0.74 + rand() * 0.06, wid: 0.38, tilt: 0.78 + (i % 2) * 0.12, curl: -0.25, cup: 1.05, ruffle: 0.02, midrib: -0.06, seed: i + 3, nu: 14, nv: 9, sway1: 0.45 }, phase);
+  }
+  for (let i = 0; i < 3; i++) {
+    const a = tw + 1.05 + (i / 3) * TAU;
+    S.blade(frame(x + Math.cos(a) * 0.05 * R, y + Math.sin(a) * 0.05 * R, z0 + 0.14 * R, a, R), { len: 0.46, wid: 0.32, tilt: 1.18, curl: 0.12, cup: 1.3, seed: i + 9, nu: 10, nv: 8, sway1: 0.25 }, phase);
+  }
+  S.ellipsoid(frame(x, y, z0 + 0.16 * R, tw, R), 0.085, 0.085, 0.3, phase, 0.05, 14);
+}
+
 // Small five-petal blossom (orange blossom / jasmine).
 function blossom(S, rand, x, y, s, z0, phase) {
   const tw = rand() * TAU;
@@ -486,46 +506,6 @@ function leafMotif(S, rand, x, y, len, ang, z0, phase, o = {}) {
     },
     phase
   );
-}
-
-// Bird in flight seen from above: fanned primaries and coverts, tail, head.
-function bird(S, rand, x, y, s, ang, z0, phase) {
-  const T = frame(x, y, z0, ang, s);
-  const at = (lx, ly) => {
-    const p = T(lx, ly, 0);
-    return [p[0], p[1]];
-  };
-  // tail
-  for (let i = 0; i < 7; i++) {
-    const a = ang + PI + (i / 6 - 0.5) * 0.8;
-    const [px, py] = at(-0.26, (i / 6 - 0.5) * 0.06);
-    S.blade(frame(px, py, z0 + 0.03 * s + i * 0.002 * s, a, s), { shape: "feather", len: 0.42 - Math.abs(i - 3) * 0.02, wid: 0.06, tilt: 0.06, curl: 0.15, cup: 0.4, midrib: 0.25, nu: 10, nv: 5, sway1: 0.5 }, phase);
-  }
-  // wings
-  for (const sd of [-1, 1]) {
-    for (const row of [0, 1]) {
-      const n = row ? 7 : 11;
-      for (let i = 0; i < n; i++) {
-        const t = i / (n - 1);
-        const reach = row ? 0.3 : 0.5;
-        const [px, py] = at(0.08 - t * 0.02, sd * (0.06 + t * reach));
-        const a = ang + sd * (PI - t * (PI / 2 - 0.25));
-        const len = row ? 0.18 + 0.12 * t : 0.3 + 0.42 * Math.pow(t, 1.2);
-        S.blade(
-          frame(px, py, z0 + (row ? 0.06 : 0.03) * s + (1 - t) * 0.02 * s, a, s),
-          { shape: "feather", len, wid: row ? 0.07 : 0.06, tilt: 0.12, curl: 0.25, cup: 0.35, midrib: 0.2, nu: 10, nv: 5, sway0: 0.4 * t, sway1: 0.5 + 0.5 * t },
-          phase
-        );
-      }
-    }
-  }
-  // body, head, beak
-  S.ellipsoid(frame(x, y, z0 + 0.03 * s, ang, s), 0.3, 0.13, 0.15, phase, 0.15, 16);
-  const [hx, hy] = at(0.28, 0);
-  S.ellipsoid(frame(hx, hy, z0 + 0.07 * s, ang, s), 0.11, 0.095, 0.11, phase, 0.15, 12);
-  const [b0x, b0y] = at(0.37, 0);
-  const [b1x, b1y] = at(0.47, 0);
-  S.tube([[b0x, b0y, z0 + 0.1 * s], [b1x, b1y, z0 + 0.06 * s]], 0.03 * s, 0.006 * s, phase, 0.1, 5);
 }
 
 // Butterfly: four broad wings and a slim body.
@@ -672,46 +652,107 @@ function bow(S, x, y, s, phase) {
   S.ellipsoid(frame(x, y, 0.006, 0, s), 0.13, 0.1, 0.12, phase, 0, 10);
 }
 
-// Vine: a wandering stem with alternate leaves, tendrils and buds.
-function vine(S, rand, pts, z0, phase, allow) {
-  const runs = [];
-  let run = [];
-  for (const p of pts) {
-    if (allow(p[0], p[1])) run.push(p);
-    else if (run.length) (runs.push(run), (run = []));
-  }
-  if (run.length) runs.push(run);
-  for (const r of runs) {
-    if (r.length < 3) continue;
-    S.tube(r.map(([px, py]) => [px, py, z0]), 0.0042, 0.0022, phase, 0.1);
-    for (let i = 1; i < r.length - 1; i++) {
-      const [px, py] = r[i];
-      const a = Math.atan2(r[i + 1][1] - r[i - 1][1], r[i + 1][0] - r[i - 1][0]);
-      const sd = i % 2 ? 1 : -1;
-      const roll = rand();
-      if (roll < 0.75) leafMotif(S, rand, px, py, 0.028 + rand() * 0.02, a + sd * (0.7 + rand() * 0.4), z0 + 0.001, phase);
-      else if (roll < 0.88) {
-        // tendril: a tightening spiral
-        const tp = [];
-        let ta = a + sd * 1.2;
-        let rr = 0.012;
-        let tx = px;
-        let ty = py;
-        for (let k = 0; k < 9; k++) {
-          tp.push([tx, ty, z0 + 0.002]);
-          tx += Math.cos(ta) * rr;
-          ty += Math.sin(ta) * rr;
-          ta += sd * 0.75;
-          rr *= 0.8;
-        }
-        S.tube(tp, 0.0016, 0.0008, phase, 0.5, 5);
-      } else bud(S, rand, px + Math.cos(a + sd) * 0.012, py + Math.sin(a + sd) * 0.012, 0.022, a + sd * 0.9, z0 + 0.001, phase);
+// ---------------------------------------------------------------------------
+// Sprays: the unit of the composition, after neoclassical plaster ornament.
+// A tapered stem follows an S-curve ("line of beauty"); leaves alternate
+// along it, largest in the middle and graded smaller toward both tips; short
+// side stems end in buds; blooms sit on the stem, lifted clearly above the
+// foliage so every layer reads: stem < leaves < petals.
+// ---------------------------------------------------------------------------
+function spray(S, rand, path, o, phase) {
+  const { leaf = 0.05, z0 = 0.002, blooms = [], buds = [0.06, 0.94], blossoms = [], gap = 0.85 } = o;
+  const pts3 = path.map(([x, y]) => [x, y, z0]);
+  const N = 80;
+  const P = [];
+  for (let i = 0; i <= N; i++) P.push(catmullRom(pts3, i / N));
+  const len = [0];
+  for (let i = 1; i <= N; i++) len.push(len[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+  const total = len[N];
+  const at = (t) => {
+    const i = Math.min(N - 1, Math.floor(t * N));
+    const f = t * N - i;
+    const a = P[i];
+    const b = P[i + 1];
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, ang: Math.atan2(b.y - a.y, b.x - a.x) };
+  };
+  const tAtLen = (d) => {
+    let i = 0;
+    while (i < N && len[i + 1] < d) i++;
+    return (i + (d - len[i]) / Math.max(1e-6, len[i + 1] - len[i])) / N;
+  };
+
+  S.tube(P.filter((_, i) => i % 4 === 0 || i === N).map((p) => [p.x, p.y, z0]), leaf * 0.085, leaf * 0.03, phase, 0.1);
+
+  // where blooms sit (leaves keep clear of their centres)
+  const placed = blooms.map((b) => {
+    const p = at(b.t);
+    const side = b.side ?? 0;
+    return { ...b, x: p.x - Math.sin(p.ang) * side * b.R, y: p.y + Math.cos(p.ang) * side * b.R, ang: p.ang };
+  });
+
+  // leaves, alternating, graded by position along the stem
+  let d = leaf * 0.5;
+  let sd = rand() < 0.5 ? 1 : -1;
+  while (d < total - leaf * 0.3) {
+    const t = tAtLen(d);
+    const p = at(t);
+    const grade = 0.55 + 0.45 * Math.sin(PI * Math.min(1, Math.max(0, t)));
+    const L = leaf * grade * (0.92 + rand() * 0.16);
+    const clear = placed.every((b) => Math.hypot(p.x - b.x, p.y - b.y) > b.R * 0.75);
+    if (clear) {
+      leafMotif(S, rand, p.x, p.y, L, p.ang + sd * (0.62 + rand() * 0.18), z0 + 0.0015, phase, {
+        wid: 0.24,
+        tilt: 0.42,
+        bend: 0.55,
+        curl: 0.15,
+        twist: sd * 0.45,
+        fold: 0.32,
+        ruffle: 0.02,
+      });
     }
+    sd = -sd;
+    d += L * gap;
+  }
+
+  // side stems ending in buds
+  for (const t of buds) {
+    const p = at(t);
+    const s2 = rand() < 0.5 ? 1 : -1;
+    const a = p.ang + s2 * 0.7 + (t > 0.5 ? 0 : PI);
+    bud(S, rand, p.x + Math.cos(a) * leaf * 0.55, p.y + Math.sin(a) * leaf * 0.55, leaf * 0.42, a, z0 + 0.002, phase);
+  }
+  for (const t of blossoms) {
+    const p = at(t);
+    const a = p.ang + (rand() < 0.5 ? 1 : -1) * PI * 0.5;
+    blossom(S, rand, p.x + Math.cos(a) * leaf * 0.5, p.y + Math.sin(a) * leaf * 0.5, leaf * 0.36, z0 + 0.004, phase);
+  }
+
+  // blooms on top, each over a small collar of its own leaves
+  for (const b of placed) {
+    const n = b.kind === lily || b.kind === iris ? 2 : 3;
+    const a0 = b.ang + rand() * 0.6;
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i / n) * TAU + (rand() - 0.5) * 0.4;
+      leafMotif(S, rand, b.x + Math.cos(a) * b.R * 0.35, b.y + Math.sin(a) * b.R * 0.35, b.R * (1.05 + rand() * 0.25), a, z0 + 0.003, phase, {
+        wid: 0.25,
+        tilt: 0.35,
+        bend: 0.5,
+        twist: (rand() - 0.5) * 0.8,
+        lobes: b.kind === peony ? 0.3 : 0,
+      });
+    }
+    const zb = z0 + 0.008;
+    if (b.kind === iris) iris(S, rand, b.x, b.y, b.R, b.ang - PI * 0.5, zb, phase);
+    else if (b.kind === lily) lily(S, rand, b.x, b.y, b.R, b.ang + rand(), zb, phase);
+    else b.kind(S, rand, b.x, b.y, b.R, zb, phase);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Composition.
+// Composition: hand-placed, like a plaster ceiling rather than a carpet.
+// About 40-45% of the wall carries relief; the rest is quiet plaster, which
+// keeps the shadows light. The tile tiles vertically, so paths may run past
+// y = 0 or 1. The hero shows roughly y 0..0.56 of the tile.
 // ---------------------------------------------------------------------------
 export const BAND = { y: 0.9, half: 0.034 }; // inscription band (carved canvas)
 
@@ -720,202 +761,93 @@ export function buildSculpture({ seed = 11, detail = 1 } = {}) {
   const rand = mulberry32(seed);
   let motifId = 0;
   const phase = () => ((motifId++ * 0.618034) % 1);
-
-  const wrapDy = (a, b) => {
-    let d = Math.abs(a - b) % 1;
-    return Math.min(d, 1 - d);
-  };
-  const ym = (y) => ((y % 1) + 1) % 1;
   const M = MEDALLION;
-  const inBand = (y, pad = 0) => wrapDy(y, BAND.y) < BAND.half + 0.016 + pad;
-  const medDist = (x, y) => Math.hypot(x - M.x, wrapDy(y, M.y));
-  // breathing room behind the hero headline (left, upper half of the tile)
-  const quiet = (x, y) => {
-    const dx = (x - 0.27) / 0.27;
-    const dy = (ym(y) - 0.29) / 0.15;
-    return Math.min(1, 1.4 * Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy)));
-  };
-  const free = (x, y, pad = 0) => !inBand(y, pad) && medDist(x, y) > M.r * 1.12 + pad;
-
-  // coarse occupancy grid used to fill every gap
-  const G = 96;
-  const occ = new Uint8Array(G * G);
-  const mark = (x, y, r) => {
-    const c0 = Math.floor((x - r) * G);
-    const c1 = Math.ceil((x + r) * G);
-    const r0 = Math.floor((y - r) * G);
-    const r1 = Math.ceil((y + r) * G);
-    for (let j = r0; j <= r1; j++) {
-      for (let i = c0; i <= c1; i++) {
-        if (i < 0 || i >= G) continue;
-        if (Math.hypot((i + 0.5) / G - x, (j + 0.5) / G - y) > r) continue;
-        occ[(((j % G) + G) % G) * G + i] = 1;
-      }
-    }
-  };
 
   // --- inscription fillets
   for (const dy of [-BAND.half, BAND.half]) {
     S.tube([[0.06, BAND.y + dy, 0], [0.5, BAND.y + dy, 0], [0.94, BAND.y + dy, 0]], 0.0034, 0.0034, phase());
   }
 
-  // --- wreath and medallion
+  // --- wreath and medallion (upper right of the hero)
   const mp = phase();
   medallion(S, mp);
   const lp = phase();
-  laurel(S, rand, M.x - M.r * 0.2, M.y + M.r * 1.75, M.x - M.r * 2.15, M.y + M.r * 0.6, M.x - M.r * 0.7, M.y - M.r * 1.75, 0.05, 0.001, lp, -1);
-  laurel(S, rand, M.x + M.r * 0.2, M.y + M.r * 1.75, M.x + M.r * 2.15, M.y + M.r * 0.6, M.x + M.r * 0.7, M.y - M.r * 1.75, 0.05, 0.001, lp, 1);
+  laurel(S, rand, M.x - M.r * 0.2, M.y + M.r * 1.75, M.x - M.r * 2.15, M.y + M.r * 0.6, M.x - M.r * 0.7, M.y - M.r * 1.75, 0.05, 0.002, lp, -1);
+  laurel(S, rand, M.x + M.r * 0.2, M.y + M.r * 1.75, M.x + M.r * 2.15, M.y + M.r * 0.6, M.x + M.r * 0.7, M.y - M.r * 1.75, 0.05, 0.002, lp, 1);
   bow(S, M.x, M.y + M.r * 1.8, 0.05, lp);
-  mark(M.x, M.y, M.r * 1.9);
 
-  // --- flacon with bergamot
-  const F = { x: 0.53, y: 0.63, h: 0.15 };
+  // --- A: across the top, above the headline: a rose with a bud spray
+  spray(S, rand, [[-0.04, 0.14], [0.08, 0.06], [0.22, 0.05], [0.36, 0.1], [0.47, 0.04]], {
+    leaf: 0.05,
+    blooms: [
+      { t: 0.42, kind: rose, R: 0.062, side: 0.15 },
+      { t: 0.86, kind: blossom, R: 0.026 },
+    ],
+    blossoms: [0.2],
+  }, phase());
+
+  // --- B: falls from the wreath down the right edge: a peony
+  spray(S, rand, [[0.6, 0.45], [0.72, 0.49], [0.86, 0.47], [0.95, 0.56], [1.04, 0.62]], {
+    leaf: 0.048,
+    blooms: [{ t: 0.5, kind: peony, R: 0.07, side: 0.2 }],
+    blossoms: [0.22, 0.8],
+  }, phase());
+
+  // --- C: rises from the lower left: a magnolia and a lily
+  spray(S, rand, [[-0.05, 0.86], [0.06, 0.74], [0.13, 0.62], [0.26, 0.58], [0.36, 0.66]], {
+    leaf: 0.052,
+    blooms: [
+      { t: 0.35, kind: magnolia, R: 0.075, side: -0.15 },
+      { t: 0.8, kind: lily, R: 0.055, side: 0.3 },
+    ],
+  }, phase());
+
+  // --- the flacon with bergamot and lemon, centre
+  const F = { x: 0.5, y: 0.66, h: 0.15 };
   flacon(S, F.x, F.y, F.h, phase());
-  mark(F.x, F.y, 0.075);
+  spray(S, rand, [[0.56, 0.78], [0.62, 0.71], [0.66, 0.62], [0.63, 0.55]], {
+    leaf: 0.04,
+    blooms: [],
+    buds: [],
+    blossoms: [0.25, 0.75],
+  }, phase());
+  lemon(S, rand, 0.66, 0.73, 0.045, -0.5, 0.006, phase());
+  citrus(S, rand, 0.41, 0.77, 0.036, 0.004, phase());
 
-  // --- vines: the green carpet everything else grows over
-  const allowVine = (x, y) => !inBand(y, -0.008) && medDist(x, y) > M.r * 1.05 && Math.hypot(x - F.x, wrapDy(y, F.y + 0.02)) > 0.075;
-  for (let v = 0; v < 9; v++) {
-    let x = rand();
-    let y = rand();
-    let a = rand() * TAU;
-    const pts = [];
-    for (let i = 0; i < 34; i++) {
-      pts.push([x, y]);
-      a += (rand() - 0.5) * 0.9;
-      // keep vines on the tile horizontally
-      if (x < 0.06) a += (0 - Math.cos(a)) * 0.6;
-      if (x > 0.94) a -= (0 - Math.cos(a)) * 0.6;
-      x += Math.cos(a) * 0.024;
-      y += Math.sin(a) * 0.024;
-    }
-    vine(S, rand, pts, 0, phase(), (px, py) => allowVine(px, py) && quiet(px, py) < 0.35);
-  }
+  // --- D: lower right, under the flacon line: a rose and an iris
+  spray(S, rand, [[0.7, 0.86], [0.78, 0.78], [0.9, 0.74], [0.98, 0.8], [1.06, 0.76]], {
+    leaf: 0.046,
+    blooms: [
+      { t: 0.32, kind: rose, R: 0.056, side: -0.2 },
+      { t: 0.78, kind: iris, R: 0.05, side: 0.1 },
+    ],
+  }, phase());
 
-  // --- birds in flight (none for now: removed from the composition; add
-  // [x, y, size, angle] entries to bring them back — the fill flows into
-  // the space they would take)
-  const birds = [];
-  for (const [x, y, s, a] of birds) {
-    bird(S, rand, x, y, s, a, 0.008, phase());
-    mark(x, y, s * 0.6);
-  }
-  butterfly(S, rand, 0.06, 0.42, 0.05, -1.2, 0.006, phase());
-  butterfly(S, rand, 0.62, 0.92 - 0.1, 0.045, 2.2, 0.006, phase());
-  bee(S, rand, 0.58, 0.3, 0.035, 0.6, 0.006, phase());
-  bee(S, rand, 0.97, 0.7, 0.03, -2.1, 0.006, phase());
+  // --- E: below the inscription, running up into the top of the tile
+  spray(S, rand, [[0.5, 0.99], [0.62, 0.95], [0.76, 0.98], [0.9, 1.04], [0.98, 1.12]], {
+    leaf: 0.044,
+    blooms: [{ t: 0.55, kind: magnolia, R: 0.058, side: 0.15 }],
+    blossoms: [0.2],
+  }, phase());
+  spray(S, rand, [[0.02, 0.97], [0.12, 1.0], [0.24, 0.98], [0.33, 1.02]], {
+    leaf: 0.04,
+    blooms: [{ t: 0.55, kind: peony, R: 0.05, side: -0.1 }],
+    buds: [0.08],
+  }, phase());
 
-  // --- fragrance accents
-  const accents = [
-    [citrus, 0.41, 0.6, 0.042],
-    [citrus, 0.645, 0.71, 0.036],
-    [citrus, 0.97, 0.37, 0.034],
-    [citrus, 0.22, 0.96 - 0.12, 0.03],
-  ];
-  for (const [fn, x, y, r] of accents) {
-    fn(S, rand, x, y, r, 0.004, phase());
-    mark(x, y, r);
-  }
-  lemon(S, rand, 0.6, 0.52, 0.05, -0.4, 0.004, phase());
-  mark(0.6, 0.52, 0.035);
+  // --- F: a slim spray under the hero text, so the corner is not bare
+  spray(S, rand, [[-0.04, 0.53], [0.06, 0.49], [0.17, 0.52], [0.27, 0.5]], {
+    leaf: 0.036,
+    blooms: [{ t: 0.62, kind: blossom, R: 0.024 }],
+    buds: [0.9],
+  }, phase());
 
-  // --- big blooms, dart-throwing with overlap allowed
-  const blooms = [];
-  const kinds = [
-    [rose, 0.36, 0.034, 0.058],
-    [peony, 0.2, 0.042, 0.064],
-    [lily, 0.16, 0.05, 0.068],
-    [iris, 0.12, 0.045, 0.06],
-    [blossom, 0.16, 0.018, 0.026],
-  ];
-  for (let tries = 0; tries < 1400 && blooms.length < 46; tries++) {
-    const x = 0.03 + rand() * 0.94;
-    const y = rand();
-    let pick = rand();
-    let kind = kinds[0];
-    for (const k of kinds) {
-      if ((pick -= k[1]) <= 0) {
-        kind = k;
-        break;
-      }
-    }
-    const q = quiet(x, y);
-    let R = kind[2] + rand() * (kind[3] - kind[2]);
-    if (q > 0) {
-      if (rand() < q * 0.9) continue;
-      R *= 1 - q * 0.45;
-    }
-    if (!free(x, y, R * 0.5)) continue;
-    if (Math.hypot(x - F.x, wrapDy(y, F.y)) < 0.07 + R * 0.6) continue;
-    let ok = true;
-    for (const b of blooms) {
-      if (Math.hypot(x - b.x, wrapDy(y, b.y)) < (R + b.R) * 0.78) {
-        ok = false;
-        break;
-      }
-    }
-    for (const [bx, by, bs] of birds) if (Math.hypot(x - bx, wrapDy(y, by)) < R * 0.6 + bs * 0.45) ok = false;
-    if (!ok) continue;
-    blooms.push({ x, y, R, kind: kind[0] });
-  }
-  for (const b of blooms) {
-    const p = phase();
-    const big = b.kind !== blossom;
-    // a collar of leaves under each big bloom
-    if (big) {
-      const n = 3 + Math.floor(rand() * 3);
-      const a0 = rand() * TAU;
-      for (let i = 0; i < n; i++) {
-        const a = a0 + (i / n) * TAU + (rand() - 0.5) * 0.6;
-        leafMotif(S, rand, b.x + Math.cos(a) * b.R * 0.4, b.y + Math.sin(a) * b.R * 0.4, b.R * (1.2 + rand() * 0.5), a, 0.001, p, { lobes: b.kind === peony ? 0.35 : 0 });
-      }
-    }
-    const z0 = 0.003 + rand() * 0.002;
-    const ang = rand() * TAU;
-    if (b.kind === rose) rose(S, rand, b.x, b.y, b.R, z0, p);
-    else if (b.kind === peony) peony(S, rand, b.x, b.y, b.R, z0, p);
-    else if (b.kind === lily) lily(S, rand, b.x, b.y, b.R, ang, z0, p);
-    else if (b.kind === iris) iris(S, rand, b.x, b.y, b.R, -PI / 2 + (rand() - 0.5) * 0.8, z0, p);
-    else blossom(S, rand, b.x, b.y, b.R, z0, p);
-    mark(b.x, b.y, b.R * (big ? 0.95 : 1.2));
-  }
-
-  // --- fill every remaining gap with leaves, blossoms, buds and berries
-  const cells = [];
-  for (let j = 0; j < G; j += 2) for (let i = 2; i < G - 2; i += 2) cells.push([i, j]);
-  for (let i = cells.length - 1; i > 0; i--) {
-    const k = Math.floor(rand() * (i + 1));
-    [cells[i], cells[k]] = [cells[k], cells[i]];
-  }
-  for (const [i, j] of cells) {
-    if (occ[j * G + i]) continue;
-    const x = (i + 0.5 + (rand() - 0.5)) / G;
-    const y = (j + 0.5 + (rand() - 0.5)) / G;
-    if (!free(x, y, 0.004)) continue;
-    const q = quiet(x, y);
-    if (rand() < q * 0.95) continue;
-    const p = phase();
-    const sc = 1 - q * 0.4;
-    const roll = rand();
-    if (roll < 0.45) {
-      const a = rand() * TAU;
-      for (let k = 0; k < 3; k++) leafMotif(S, rand, x, y, (0.028 + rand() * 0.02) * sc, a + (k - 1) * 0.8, 0.001, p);
-      mark(x, y, 0.024 * sc);
-    } else if (roll < 0.72) {
-      blossom(S, rand, x, y, (0.016 + rand() * 0.01) * sc, 0.003, p);
-      mark(x, y, 0.02 * sc);
-    } else if (roll < 0.88) {
-      bud(S, rand, x, y, 0.024 * sc, rand() * TAU, 0.002, p);
-      mark(x, y, 0.018 * sc);
-    } else {
-      for (let k = 0; k < 5; k++) {
-        const a = rand() * TAU;
-        const d = rand() * 0.012;
-        S.ellipsoid(frame(x + Math.cos(a) * d, y + Math.sin(a) * d, 0.001, 0, 1), 0.0045, 0.0045, 0.005, p, 0.2, 10);
-      }
-      mark(x, y, 0.014);
-    }
-  }
+  // --- small living accents in the quiet areas
+  butterfly(S, rand, 0.41, 0.47, 0.05, -1.0, 0.008, phase());
+  butterfly(S, rand, 0.28, 0.84, 0.042, 2.3, 0.008, phase());
+  bee(S, rand, 0.58, 0.18, 0.034, 0.6, 0.008, phase());
+  bee(S, rand, 0.9, 0.66, 0.03, -2.1, 0.008, phase());
+  citrus(S, rand, 0.95, 0.36, 0.034, 0.004, phase());
 
   return S.build();
 }
