@@ -79,8 +79,8 @@ class Flowmap {
       uGhostAmount: { value: 0 },
       uAspect: { value: 1 },
       // immersive-g.com's flowmap: radius 0.38 / 2, 4.7% fade per 60 fps frame
-      uFalloff: { value: 0.19 },
-      uDissipation: { value: 0.962 }, // raised paper lingers a little before settling
+      uFalloff: { value: 0.3 }, // reveal radius (screen heights): full core, then a partial ring
+      uDissipation: { value: 0.965 }, // the trail left behind settles back over about a second
       uDelta: { value: 1 },
       uShift: { value: 0 },
       uTime: { value: 0 },
@@ -306,13 +306,13 @@ export class WallScene {
       tCrumple: { value: crumpleRT.texture },
       tFlow: { value: this.flow.texture },
       uFlowTexel: { value: new THREE.Vector2(1 / FLOW_SIZE, 1 / FLOW_SIZE) },
-      uBulge: { value: this.reducedMotion ? 0 : 0.005 },
+      uBulge: { value: this.reducedMotion ? 0 : 0.002 },
       // camera distance for the perspective push-out (immersive-g's sits
       // ~0.85 tile widths back; ours is a little further, our relief is deeper)
-      uPersp: { value: 4.5 }, // relief is now very tall; keep the push-out gentle so it never folds
-      uCrumple: { value: this.reducedMotion ? 0 : 0.16 },
+      uPersp: { value: 14 }, // only a hint of push-out: the cursor reveals, it does not distort
+      uCrumple: { value: this.reducedMotion ? 0 : 0.1 },
       uSnap: { value: this.reducedMotion ? 0 : 0.55 },
-      uSmear: { value: this.reducedMotion ? 0 : 0.035 },
+      uSmear: { value: 0 }, // no smear: it read as distortion rather than reveal
       uAspect: { value: 1 },
       uTileScale: { value: 1 },
       uTileX: { value: 0 },

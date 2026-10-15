@@ -62,21 +62,22 @@ export const flowFrag = /* glsl */ `
     if (uv.y < 0.0 || uv.y > 1.0) data = vec4(0.0);
     data *= pow(uDissipation, uDelta);
 
-    // coarse, slowly drifting mask: the trail reveals fully in some patches
-    // and barely in others, which is what makes immersive-g's wall look like
-    // paper catching rather than a soft brush
     vec2 nuv = vUv * vec2(uAspect, 1.0);
-    float coarse = noise(nuv * 3.2 + uTime * 0.05) * 0.7 + noise(nuv * 7.0 - uTime * 0.03) * 0.3;
-    float n1 = 0.15 + 0.85 * smoothstep(0.35, 0.85, coarse);
     float n2 = smoothstep(0.3, 0.95, noise(nuv * 3.0 - uTime * 0.08));
 
-    // stamp at full strength each frame (saturates almost at once, then
-    // decays): a quick, decisive pop instead of a slow fade-in
-    float speed = length(uVelocity);
-    float lift = 1.0 - pow(1.0 - min(1.0, speed * 1.4), 2.0);
-    float f = stamp(vUv, uMouse, uFalloff);
-    data.rg += uVelocity * f * uDelta;
-    data.b += lift * f * n1 * uDelta * 0.4; // builds over a moment: paper rises, it does not pop
+    // Reveal by distance from the cursor, whether it moves or rests: fully
+    // raised right under it, partly raised in a wider soft ring. The edge is
+    // nudged by slow noise so it reads as paper, not a perfect circle. Only
+    // the trail left behind (what the cursor no longer covers) settles back.
+    vec2 dc = vUv - uMouse;
+    dc.x *= uAspect;
+    float wob = (noise(nuv * 6.0 + uTime * 0.1) - 0.5) * uFalloff * 0.25;
+    float dist = length(dc) + wob;
+    float core = 1.0 - smoothstep(uFalloff * 0.3, uFalloff * 0.55, dist);       // fully revealed
+    float ring = (1.0 - smoothstep(uFalloff * 0.55, uFalloff, dist)) * 0.55;    // partly revealed
+    float here = max(core, ring);
+    data.b = max(data.b, here);
+    data.rg += uVelocity * stamp(vUv, uMouse, uFalloff) * uDelta;
 
     float g = bloom(vUv, uGhost, uFalloff * 1.25, 3.1);
     data.a += uGhostAmount * g * n2 * uDelta * 0.05;
@@ -415,7 +416,7 @@ export const reliefFrag = /* glsl */ `
 
     // motifs rise in a staggered order (by motif and by paper facet), in five
     // quick beats like a relief baked at five depths, then breathe while raised
-    float lk = clamp(lift * 1.35 - phase * 0.3 - crum.b * 0.18, 0.0, 1.0);
+    float lk = clamp(lift * 1.6 - phase * 0.3 - crum.b * 0.18, 0.0, 1.0); // full height under the cursor, staggered in the ring
     float beats = lk * 5.0;
     float stepped = (floor(beats) + smoothstep(0.0, 0.4, fract(beats))) / 5.0;
     lk = mix(lk, stepped, uSnap);

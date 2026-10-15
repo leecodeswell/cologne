@@ -39,7 +39,7 @@ It deploys as-is to any static host (GitHub Pages, Netlify, Vercel). There is no
 ## How the cursor effect works
 
 1. **Bake the relief once.** At load, the sculpture is rendered into a height map, and the lighting data for it is baked (see below).
-2. **Paint the cursor trail.** A 256×256 flowmap is updated every frame, swapping between two buffers. The cursor stamps its velocity and a "lift" value into it, and every frame the old values fade by about 4.5%. The occasional small swellings stamp into it too, with noise-warped, irregular edges.
+2. **Reveal around the cursor.** A 256×256 flowmap is updated every frame, swapping between two buffers. Each frame the cursor writes a reveal shaped by distance: full height within a core around it, and partial height in a wider soft ring (`uFalloff`). This holds steady while the cursor rests and doesn’t depend on movement. What the cursor leaves behind fades by about 3.5% per frame, so the trail settles back over about a second. The occasional small swellings write into it too, with irregular edges.
 3. **Raise and light the relief.** The wall shader reads the lift under each pixel and scales the relief from flat up to full depth. It then lights it like soft overcast daylight, white on white: slopes facing the light brighten a little, slopes turned away dim a little, with a whisper of ambient occlusion in deep folds, and a very soft, wide halo where taller forms rise above lower ones, so the height layers read. There is deliberately no cast shadow, no cavity darkening, no specular shine and no colour tint.
 
 ## How the relief is made
