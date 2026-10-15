@@ -12,8 +12,18 @@
   --serif: "Cormorant Garamond", "Times New Roman", serif;
   --sans: "Jost", "Helvetica Neue", Arial, sans-serif;
 
+  --bg: var(--plaster);
+
   --gutter: clamp(16px, 3.2vw, 48px);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Between the two films the wall turns to dark stone; text follows. */
+html.is-dark {
+  --ink: #ebe6dc;
+  --ink-soft: #8f8b84;
+  --hair: rgba(235, 230, 220, 0.16);
+  --bg: #0b0d13;
 }
 
 /* ==========================================================================
@@ -40,8 +50,9 @@ html.lenis body {
 
 body {
   margin: 0;
-  background: var(--plaster);
+  background: var(--bg);
   color: var(--ink);
+  transition: background-color 0.8s ease, color 0.8s ease;
   font-family: var(--sans);
   font-weight: 300;
   font-size: 15px;
@@ -83,6 +94,12 @@ ul {
 ::selection {
   background: var(--ink);
   color: var(--ivory);
+}
+
+.eyebrow,
+.film__meta,
+.interlude cite {
+  transition: color 0.8s ease;
 }
 
 .eyebrow {

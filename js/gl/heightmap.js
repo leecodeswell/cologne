@@ -243,8 +243,15 @@ export function createHeightCanvas(size = 2048, seed = 7) {
     }
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `500 ${Math.round(S * 0.036)}px "Cormorant Garamond", serif`;
-    if ("letterSpacing" in ctx) ctx.letterSpacing = `${Math.round(S * 0.012)}px`;
+    // shrink the type until the line fits between the fillets
+    let size = S * 0.036;
+    for (let i = 0; i < 6; i++) {
+      ctx.font = `500 ${Math.round(size)}px "Cormorant Garamond", serif`;
+      if ("letterSpacing" in ctx) ctx.letterSpacing = `${Math.round(size * 0.33)}px`;
+      const w = ctx.measureText(text).width;
+      if (w <= (x1 - x0) * 0.94) break;
+      size *= ((x1 - x0) * 0.94) / w;
+    }
     // incised: deepest in the middle of each stroke
     ctx.lineWidth = S * 0.004;
     ctx.strokeStyle = grey(FLAT - 0.07);
@@ -252,6 +259,252 @@ export function createHeightCanvas(size = 2048, seed = 7) {
     ctx.fillStyle = grey(0.0);
     ctx.fillText(text, S / 2, y + S * 0.002);
     if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+  }
+
+  // Draw a shape on a scratch canvas so parts can be cut away, then stamp it.
+  function cutout(w, h, draw) {
+    const c = document.createElement("canvas");
+    c.width = Math.ceil(w);
+    c.height = Math.ceil(h);
+    draw(c.getContext("2d"));
+    return c;
+  }
+
+  // Crescent moon: a domed disc with an offset disc cut out of it.
+  function moon(x, y, r, h) {
+    const c = cutout(r * 2.2, r * 2.2, (g) => {
+      const cx = r * 1.1;
+      const grad = g.createRadialGradient(cx - r * 0.35, cx, 0, cx, cx, r);
+      grad.addColorStop(0, grey(h));
+      grad.addColorStop(0.75, grey(h - 0.2));
+      grad.addColorStop(1, grey(FLAT + 0.05));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(cx, cx, r, 0, Math.PI * 2);
+      g.fill();
+      g.globalCompositeOperation = "destination-out";
+      g.beginPath();
+      g.arc(cx + r * 0.42, cx - r * 0.12, r * 0.86, 0, Math.PI * 2);
+      g.fill();
+    });
+    ctx.drawImage(c, x - r * 1.1, y - r * 1.1);
+  }
+
+  // Four-pointed sparkle.
+  function sparkle(x, y, r, h) {
+    const p = new Path2D();
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 - Math.PI / 2;
+      const b = a + Math.PI / 4;
+      const tip = [x + Math.cos(a) * r, y + Math.sin(a) * r];
+      if (i === 0) p.moveTo(...tip);
+      else p.lineTo(...tip);
+      p.quadraticCurveTo(x + Math.cos(b) * r * 0.12, y + Math.sin(b) * r * 0.12, x + Math.cos(a + Math.PI / 2) * r, y + Math.sin(a + Math.PI / 2) * r);
+    }
+    p.closePath();
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, grey(h));
+    g.addColorStop(1, grey(FLAT + 0.04));
+    ctx.fillStyle = g;
+    ctx.fill(p);
+  }
+
+  // Bearded iris: drooping falls, upright standards, stem and sword leaves.
+  function iris(x, y, s, h) {
+    const stem = new Path2D();
+    stem.moveTo(x, y + s * 0.1);
+    stem.quadraticCurveTo(x + s * 0.08, y + s * 0.9, x - s * 0.02, y + s * 1.7);
+    roundStroke(stem, s * 0.07, h - 0.2);
+    leaf(x - s * 0.02, y + s * 1.7, s * 1.25, s * 0.09, -Math.PI / 2 - 0.32, h - 0.18, -0.04);
+    leaf(x - s * 0.02, y + s * 1.7, s * 1.0, s * 0.08, -Math.PI / 2 + 0.36, h - 0.2, 0.05);
+    leaf(x - s * 0.02, y + s * 1.7, s * 0.7, s * 0.07, -Math.PI / 2 - 0.75, h - 0.24, -0.06);
+    // falls
+    leaf(x, y, s * 0.62, s * 0.24, Math.PI / 2 + 0.05, h - 0.12, 0.08);
+    leaf(x, y, s * 0.6, s * 0.22, 0.35, h - 0.1, 0.12);
+    leaf(x, y, s * 0.6, s * 0.22, Math.PI - 0.35, h - 0.1, -0.12);
+    // standards
+    leaf(x, y, s * 0.55, s * 0.17, -Math.PI / 2, h, 0.02);
+    leaf(x, y, s * 0.5, s * 0.15, -Math.PI / 2 - 0.5, h - 0.04, -0.05);
+    leaf(x, y, s * 0.5, s * 0.15, -Math.PI / 2 + 0.5, h - 0.04, 0.05);
+    berry(x, y, s * 0.07, h);
+  }
+
+  // Fern frond: a curved rachis with dense, shrinking pinnae.
+  function fern(x0, y0, cx, cy, x1, y1, s, h) {
+    const stem = new Path2D();
+    stem.moveTo(x0, y0);
+    stem.quadraticCurveTo(cx, cy, x1, y1);
+    roundStroke(stem, s * 0.06, h - 0.15);
+    const n = 22;
+    for (let i = 0; i < n; i++) {
+      const t = 0.05 + (i / n) * 0.93;
+      const px = (1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * cx + t * t * x1;
+      const py = (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * cy + t * t * y1;
+      const a = Math.atan2(2 * (1 - t) * (cy - y0) + 2 * t * (y1 - cy), 2 * (1 - t) * (cx - x0) + 2 * t * (x1 - cx));
+      const len = s * (1 - t * 0.75) * (0.55 + 0.45 * Math.sin(Math.min(1, t * 3) * Math.PI * 0.5));
+      for (const side of [-1, 1]) leaf(px, py, len, len * 0.17, a + side * 1.0, h - 0.05, side * 0.04);
+    }
+  }
+
+  // Perfume flacon in relief: rounded shoulders, bevelled edge, faceted stopper.
+  function flacon(x, y, hgt, h) {
+    const w = hgt * 0.62;
+    const top = y - hgt * 0.5;
+    const shoulder = top + hgt * 0.36;
+    const bottom = y + hgt * 0.5;
+    const neckW = w * 0.2;
+    const body = new Path2D();
+    body.moveTo(x - neckW, shoulder - hgt * 0.06);
+    body.bezierCurveTo(x - w * 0.52, shoulder - hgt * 0.04, x - w * 0.52, shoulder + hgt * 0.05, x - w * 0.5, shoulder + hgt * 0.14);
+    body.lineTo(x - w * 0.47, bottom - hgt * 0.06);
+    body.quadraticCurveTo(x - w * 0.46, bottom, x - w * 0.38, bottom);
+    body.lineTo(x + w * 0.38, bottom);
+    body.quadraticCurveTo(x + w * 0.46, bottom, x + w * 0.47, bottom - hgt * 0.06);
+    body.lineTo(x + w * 0.5, shoulder + hgt * 0.14);
+    body.bezierCurveTo(x + w * 0.52, shoulder + hgt * 0.05, x + w * 0.52, shoulder - hgt * 0.04, x + neckW, shoulder - hgt * 0.06);
+    body.closePath();
+    const g = ctx.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+    g.addColorStop(0, grey(FLAT + 0.08));
+    g.addColorStop(0.12, grey(h - 0.12));
+    g.addColorStop(0.4, grey(h));
+    g.addColorStop(0.88, grey(h - 0.16));
+    g.addColorStop(1, grey(FLAT + 0.08));
+    ctx.fillStyle = g;
+    ctx.fill(body);
+    ctx.lineWidth = hgt * 0.012;
+    ctx.strokeStyle = grey(h + 0.04);
+    ctx.stroke(body);
+    // label plate, slightly sunk
+    const lw = w * 0.5;
+    const lh = hgt * 0.2;
+    ctx.fillStyle = grey(h - 0.2);
+    ctx.beginPath();
+    ctx.roundRect(x - lw / 2, y + hgt * 0.08, lw, lh, hgt * 0.02);
+    ctx.fill();
+    ctx.lineWidth = hgt * 0.006;
+    ctx.strokeStyle = grey(h - 0.05);
+    ctx.stroke();
+    // neck + stopper
+    const neck = ctx.createLinearGradient(x - neckW, 0, x + neckW, 0);
+    neck.addColorStop(0, grey(h - 0.25));
+    neck.addColorStop(0.45, grey(h - 0.05));
+    neck.addColorStop(1, grey(h - 0.28));
+    ctx.fillStyle = neck;
+    ctx.fillRect(x - neckW * 0.8, top + hgt * 0.2, neckW * 1.6, hgt * 0.12);
+    const cap = new Path2D();
+    cap.moveTo(x, top);
+    cap.lineTo(x + w * 0.24, top + hgt * 0.1);
+    cap.lineTo(x + w * 0.16, top + hgt * 0.21);
+    cap.lineTo(x - w * 0.16, top + hgt * 0.21);
+    cap.lineTo(x - w * 0.24, top + hgt * 0.1);
+    cap.closePath();
+    const cg = ctx.createLinearGradient(x - w * 0.24, top, x + w * 0.24, top + hgt * 0.2);
+    cg.addColorStop(0, grey(h - 0.04));
+    cg.addColorStop(0.5, grey(h + 0.04));
+    cg.addColorStop(1, grey(h - 0.2));
+    ctx.fillStyle = cg;
+    ctx.fill(cap);
+    ctx.lineWidth = hgt * 0.006;
+    ctx.strokeStyle = grey(h - 0.22);
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, top + hgt * 0.21);
+    ctx.moveTo(x - w * 0.24, top + hgt * 0.1);
+    ctx.lineTo(x + w * 0.24, top + hgt * 0.1);
+    ctx.stroke();
+  }
+
+  // Bee: veined wings behind a striped, domed body.
+  function bee(x, y, s, angle, h) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    leaf(-s * 0.05, -s * 0.1, s * 0.75, s * 0.2, -Math.PI / 2 - 0.45, h - 0.3, -0.05);
+    leaf(s * 0.05, -s * 0.1, s * 0.75, s * 0.2, -Math.PI / 2 + 0.45, h - 0.3, 0.05);
+    leaf(-s * 0.05, -s * 0.05, s * 0.5, s * 0.15, -Math.PI / 2 - 1.0, h - 0.34, -0.05);
+    leaf(s * 0.05, -s * 0.05, s * 0.5, s * 0.15, -Math.PI / 2 + 1.0, h - 0.34, 0.05);
+    const g = ctx.createRadialGradient(-s * 0.06, -s * 0.05, 0, 0, s * 0.12, s * 0.45);
+    g.addColorStop(0, grey(h));
+    g.addColorStop(0.8, grey(h - 0.2));
+    g.addColorStop(1, grey(FLAT + 0.06));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.18, s * 0.17, s * 0.36, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = s * 0.035;
+    ctx.strokeStyle = grey(h - 0.28);
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.ellipse(0, s * (0.1 + i * 0.13), s * 0.16, s * 0.05, 0, 0.15, Math.PI - 0.15);
+      ctx.stroke();
+    }
+    berry(0, -s * 0.24, s * 0.12, h - 0.05);
+    ctx.lineWidth = s * 0.025;
+    ctx.strokeStyle = grey(h - 0.2);
+    for (const sd of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sd * s * 0.04, -s * 0.33);
+      ctx.quadraticCurveTo(sd * s * 0.1, -s * 0.5, sd * s * 0.2, -s * 0.52);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Scallop shell: radiating ribs inside a scalloped rim, with hinge ears.
+  function shell(x, y, r, angle, h) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    const n = 11;
+    const spread = 1.25;
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 - spread + (i / (n - 1)) * spread * 2;
+      const mid = 1 - Math.abs(i / (n - 1) - 0.5) * 0.5;
+      leaf(0, 0, r * (0.9 + 0.1 * mid), r * 0.15, a, h - 0.08 * (1 - mid));
+    }
+    for (const sd of [-1, 1]) {
+      ctx.fillStyle = grey(h - 0.22);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(sd * r * 0.32, r * 0.02);
+      ctx.lineTo(sd * r * 0.28, -r * 0.16);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Hummingbird in profile: domed body, feathered wing and tail, long beak.
+  function bird(x, y, s, flip, h) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(flip, 1);
+    // tail
+    for (let i = 0; i < 4; i++) leaf(-s * 0.35, s * 0.18, s * 0.55, s * 0.09, Math.PI * 0.82 + i * 0.09, h - 0.15);
+    // body
+    const g = ctx.createRadialGradient(-s * 0.05, -s * 0.05, 0, 0, 0, s * 0.42);
+    g.addColorStop(0, grey(h));
+    g.addColorStop(0.75, grey(h - 0.18));
+    g.addColorStop(1, grey(FLAT + 0.05));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s * 0.42, s * 0.2, -0.45, 0, Math.PI * 2);
+    ctx.fill();
+    // head + beak
+    berry(s * 0.34, -s * 0.24, s * 0.14, h);
+    const beak = new Path2D();
+    beak.moveTo(s * 0.45, -s * 0.27);
+    beak.lineTo(s * 0.98, -s * 0.38);
+    roundStroke(beak, s * 0.035, h - 0.12);
+    ctx.fillStyle = grey(h - 0.32);
+    ctx.beginPath();
+    ctx.arc(s * 0.38, -s * 0.27, s * 0.025, 0, Math.PI * 2);
+    ctx.fill();
+    // wing: a fan of feathers sweeping up and back
+    for (let i = 0; i < 7; i++) {
+      leaf(s * 0.02, -s * 0.06, s * (0.95 - i * 0.07), s * 0.11, -Math.PI * 0.62 - i * 0.1, h - 0.02 - i * 0.02, -0.03);
+    }
+    ctx.restore();
   }
 
   // ---------------------------------------------------------------- composition
@@ -288,14 +541,33 @@ export function createHeightCanvas(size = 2048, seed = 7) {
     citrus(0.64 * S, 0.8 * S, 0.044 * S, 0.86);
     citrus(0.95 * S, 0.4 * S, 0.034 * S, 0.84);
 
+    // botanicals, objects and creatures in the gaps
+    iris(0.17 * S, 0.05 * S, 0.075 * S, 0.94);
+    iris(0.3 * S, 0.0 * S, 0.05 * S, 0.9);
+    bird(0.84 * S, 0.47 * S, 0.05 * S, -1, 0.9);
+    shell(0.53 * S, 0.79 * S, 0.036 * S, -0.3, 0.88);
+    fern(0.2 * S, 0.62 * S, 0.3 * S, 0.47 * S, 0.47 * S, 0.5 * S, S * 0.03, 0.82);
+    flacon(0.575 * S, 0.53 * S, 0.15 * S, 0.93);
+    bird(0.3 * S, 0.34 * S, 0.065 * S, 1, 0.92);
+    bee(0.62 * S, 0.15 * S, 0.035 * S, 0.5, 0.9);
+    bee(0.88 * S, 0.57 * S, 0.03 * S, -0.7, 0.88);
+    bee(0.2 * S, 0.97 * S, 0.03 * S, 1.9, 0.88);
+    shell(0.74 * S, 0.62 * S, 0.042 * S, 0.25, 0.9);
+    shell(0.9 * S, 0.27 * S, 0.034 * S, -0.5, 0.86);
+    moon(0.06 * S, 0.3 * S, 0.04 * S, 0.9);
+    rosette(0.33 * S, 0.62 * S, 0.035 * S, 0.88);
+    iris(0.04 * S, 0.06 * S + S * 0.0, 0.035 * S, 0.86);
+    fern(0.98 * S, 0.99 * S, 0.84 * S, 0.94 * S, 0.7 * S, 0.99 * S, S * 0.022, 0.8);
+
     inscription(0.9 * S, "ODOR · MEMORIA · LVX · TEMPVS · AETERNVM", FLAT + 0.22);
 
-    // scattered buds
-    for (let i = 0; i < 26; i++) {
+    // scattered buds and sparkles
+    for (let i = 0; i < 34; i++) {
       const bx = R(0.02, 0.98) * S;
       const by = R(0, 1) * S;
       if (Math.abs(by - 0.9 * S) < 0.06 * S) continue;
-      berry(bx, by, R(0.004, 0.009) * S, R(0.5, 0.7));
+      if (rand() < 0.4) sparkle(bx, by, R(0.008, 0.016) * S, R(0.6, 0.8));
+      else berry(bx, by, R(0.004, 0.009) * S, R(0.5, 0.7));
     }
   });
 

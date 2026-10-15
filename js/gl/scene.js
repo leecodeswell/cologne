@@ -12,6 +12,7 @@ import {
 const WALL_SPEED = 0.45; // wall parallax relative to page scroll
 const HEIGHT_SIZE = 2048;
 const FLOW_SIZE = 256;
+const SWELL_COUNT = 6; // random swellings alive at once
 
 const quad = new THREE.PlaneGeometry(1, 1);
 
@@ -27,11 +28,12 @@ function target(size, opts = {}) {
   return rt;
 }
 
-function pass(fragmentShader, uniforms) {
+function pass(fragmentShader, uniforms, defines = {}) {
   const material = new THREE.ShaderMaterial({
     vertexShader: fullscreenVert,
     fragmentShader,
     uniforms,
+    defines,
     depthTest: false,
     depthWrite: false,
   });
@@ -62,8 +64,9 @@ class Flowmap {
       uDelta: { value: 1 },
       uShift: { value: 0 },
       uTime: { value: 0 },
+      uSwells: { value: Array.from({ length: SWELL_COUNT }, () => new THREE.Vector4()) },
     };
-    this.pass = pass(flowFrag, this.uniforms);
+    this.pass = pass(flowFrag, this.uniforms, { SWELL_COUNT });
     this.camera = new THREE.Camera();
     // start empty
     for (const rt of [this.read, this.write]) {
@@ -118,6 +121,10 @@ export class WallScene {
     this.hasPointer = false;
 
     this.ghost = { x: 0.7, y: 0.6, amount: 0 };
+    this.dark = 0; // wall material: 0 plaster → 1 dark stone
+    this.darkTarget = 0;
+    // swellings live in wall pixels so they scroll with the wall
+    this.swells = Array.from({ length: SWELL_COUNT }, () => ({ x: 0, y: 0, amount: 0, radius: 0.2 }));
     this.reveal = { value: 0 };
 
     this.filmScene = new THREE.Scene();
@@ -189,6 +196,9 @@ export class WallScene {
       uFlat: { value: FLAT },
       // raw sRGB values: THREE.Color would convert hex to linear and darken it
       uColor: { value: new THREE.Vector3(0xe7 / 255, 0xe3 / 255, 0xdc / 255) },
+      // matches the navy-black of the film backdrops
+      uDarkColor: { value: new THREE.Vector3(0x0b / 255, 0x0d / 255, 0x13 / 255) },
+      uDark: { value: 0 },
     };
     this.relief = pass(reliefFrag, this.reliefUniforms);
     this.reliefCamera = new THREE.Camera();
@@ -212,6 +222,7 @@ export class WallScene {
       uPlane: { value: new THREE.Vector2(1, 1) },
       uVideo: { value: new THREE.Vector2(1920, 1080) },
       uTime: { value: 0 },
+      uProgress: { value: 0 },
     };
     const material = new THREE.ShaderMaterial({
       vertexShader: videoVert,
@@ -301,6 +312,34 @@ export class WallScene {
     loop();
   }
 
+  // Random swellings: each slot repeatedly picks a spot on screen, swells it
+  // out of the wall and lets it sink back, independent of the cursor.
+  startSwells(gsap) {
+    if (this.reducedMotion) return;
+    this.swells.forEach((swell, i) => {
+      const loop = () => {
+        swell.x = 0.06 + Math.random() * 0.88;
+        swell.y = (0.08 + Math.random() * 0.84) * this.height + this.scrollY * WALL_SPEED;
+        swell.radius = 0.12 + Math.random() * 0.16;
+        const peak = 0.7 + Math.random() * 0.5;
+        gsap.fromTo(
+          swell,
+          { amount: 0 },
+          {
+            amount: peak,
+            duration: 1.6 + Math.random() * 1.6,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat: 1,
+            repeatDelay: 0.2 + Math.random() * 1.2,
+            onComplete: () => gsap.delayedCall(0.5 + Math.random() * 3, loop),
+          }
+        );
+      };
+      gsap.delayedCall(0.8 + i * 0.9 + Math.random() * 1.2, loop);
+    });
+  }
+
   // Intro: the wall surfaces, then a sweep raises the wreath behind the title.
   intro(gsap) {
     const tl = gsap.timeline();
@@ -319,7 +358,10 @@ export class WallScene {
             this.ghost.y = 0.55 + Math.sin(a) * 0.22;
             this.ghost.amount = 1.6 * Math.sin(Math.PI * s.t);
           },
-          onComplete: () => this.startGhost(gsap),
+          onComplete: () => {
+            this.startGhost(gsap);
+            this.startSwells(gsap);
+          },
         },
         0.2
       );
@@ -352,6 +394,10 @@ export class WallScene {
     fu.uDelta.value = dt;
     fu.uShift.value = (scrollDelta * WALL_SPEED) / this.height;
     fu.uTime.value = this.time;
+    const wallOffset = this.scrollY * WALL_SPEED;
+    this.swells.forEach((s, i) => {
+      fu.uSwells.value[i].set(s.x, 1 - (s.y - wallOffset) / this.height, s.amount, s.radius);
+    });
     this.flow.update();
 
     const ru = this.reliefUniforms;
@@ -359,6 +405,8 @@ export class WallScene {
     ru.uScroll.value = (this.scrollY * WALL_SPEED) / this.width;
     ru.uTime.value = this.time;
     ru.uReveal.value = this.reveal.value;
+    this.dark += (this.darkTarget - this.dark) * (1 - Math.pow(1 - 0.12, dt));
+    ru.uDark.value = this.dark;
 
     // position video planes; skip the wall if a film covers the screen
     let covered = false;

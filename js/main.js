@@ -143,6 +143,14 @@ async function boot() {
   counter.textContent = "100";
 
   setupFilms();
+  if (reduced) {
+    ScrollTrigger.create({
+      trigger: ".interlude",
+      start: "top 60%",
+      end: "bottom 40%",
+      onToggle: (self) => (interludeDark = self.isActive),
+    });
+  }
   setupWords();
   setupReveals();
   setupProgress();
@@ -162,15 +170,31 @@ gsap.ticker.add((_, deltaMs) => {
     if (!d || reduced) continue;
     const t = f.target * (d - 0.04);
     f.shown += (t - f.shown) * 0.22;
+    if (f.gl) f.gl.uniforms.uProgress.value = f.shown / d;
     if (!f.video.seeking && Math.abs(f.video.currentTime - f.shown) > 0.012) {
       f.video.currentTime = f.shown;
     }
   }
+  updateDark();
   if (scene) {
     scene.setScroll(window.scrollY);
     scene.render(deltaMs);
   }
 });
+
+// The wall is dark between the two films. The switch happens while a film
+// fills the screen (first film fully grown → second film fully grown), so the
+// change itself is never seen.
+let isDark = false;
+let interludeDark = false; // reduced-motion fallback, set by a ScrollTrigger
+function updateDark() {
+  const [a, b] = films;
+  const dark = reduced ? interludeDark : Boolean(a && b && a.target > 0.4 && b.target < 0.36);
+  if (dark === isDark) return;
+  isDark = dark;
+  root.classList.toggle("is-dark", dark);
+  if (scene) scene.darkTarget = dark ? 1 : 0;
+}
 
 window.addEventListener("resize", () => scene?.resize());
 
@@ -217,7 +241,7 @@ function setupFilms() {
     const film = { video, target: 0, shown: 0 };
     films.push(film);
 
-    if (scene) scene.addFilm(frame, video);
+    if (scene) film.gl = scene.addFilm(frame, video);
     else video.style.opacity = 1;
 
     if (reduced) {

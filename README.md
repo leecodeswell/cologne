@@ -2,9 +2,11 @@
 
 A minimal portfolio site for luxury fragrance films. All copy is Latin placeholder text.
 
-- **Bas-relief wall.** A plaster background in WebGL. The cursor raises a carved relief out of the wall: a laurel wreath and monogram, rosettes, citrus slices and a Roman inscription. The raised trail then sinks back. A "ghost cursor" keeps the wall gently moving when nobody is touching it.
+- **Bas-relief wall.** A plaster background in WebGL. The cursor raises a carved relief out of the wall, and the raised trail then sinks back. The relief includes a laurel wreath and monogram, rosettes, irises, ferns, a perfume flacon, hummingbirds, bees, shells, a crescent moon, citrus slices and a Roman inscription. Random swellings and a "ghost cursor" keep the wall moving on its own.
+- **Dark interlude.** Between the two films the wall turns to dark polished stone, and the text turns light. The switch happens while a film fills the screen, so it's never seen.
 - **Film chapters.** Each video is pinned while you scroll. It grows from a framed card to full-screen, and the scroll position scrubs through the clip. Latin captions appear in sequence.
 - **Glass ripple.** The same cursor trail refracts the films with a soft chromatic split.
+- **Lens pass.** The films get a "photographed glass" finish: luma sharpening, bloom with warm halation, a filmic curve, lens fringing, fine grain, and a band of light that glides across the glass as you scroll.
 
 ## Run locally
 
