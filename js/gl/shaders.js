@@ -76,7 +76,7 @@ export const flowFrag = /* glsl */ `
     float lift = 1.0 - pow(1.0 - min(1.0, speed * 1.4), 2.0);
     float f = stamp(vUv, uMouse, uFalloff);
     data.rg += uVelocity * f * uDelta;
-    data.b += lift * f * n1 * uDelta;
+    data.b += lift * f * n1 * uDelta * 0.4; // builds over a moment: paper rises, it does not pop
 
     float g = bloom(vUv, uGhost, uFalloff * 1.25, 3.1);
     data.a += uGhostAmount * g * n2 * uDelta * 0.05;
@@ -345,6 +345,7 @@ export const reliefFrag = /* glsl */ `
   uniform sampler2D tHorizonA; // horizon slopes, directions 0-3
   uniform sampler2D tHorizonB; // horizon slopes, directions 4-7
   uniform sampler2D tShade;    // light horizon, cavity height, phase, sway
+  uniform sampler2D tWide;     // very wide blur of the height (halo of tall forms)
   uniform sampler2D tGrain;    // plaster grain
   uniform sampler2D tCrumple;  // facet tilt, cell random, crease distance
   uniform sampler2D tFlow;
@@ -404,7 +405,7 @@ export const reliefFrag = /* glsl */ `
     vec2 gradT = gradL / (uTileScale * vec2(1.0, uAspect));
     vec2 warp = fromCentre * hm / uPersp + gradT * hSoft * uSmear * uReveal;
     float wl = length(warp);
-    p -= wl > 0.012 ? warp * (0.012 / wl) : warp; // never more than ~1% of the wall
+    p -= wl > 0.016 ? warp * (0.016 / wl) : warp; // capped at ~1.6% of the wall
 
     vec4 relief = texture2D(tRelief, p);
     vec4 shade = texture2D(tShade, p);
@@ -461,6 +462,11 @@ export const reliefFrag = /* glsl */ `
     float facingL = dot(n, L) - L.z;              // + toward the light, - away
     float lit = 1.0 + 0.26 * clamp(facingL, -1.0, 1.0);
     lit = mix(1.0, lit, 0.9) * mix(1.0, ao, 0.5); // soft, wide occlusion: layers read without hard shadows
+    // soft, wide halo where taller forms rise above this point
+    float above = max(texture2D(tWide, p).r - relief.r, 0.0) * k;
+    lit *= 1.0 - clamp(above * 2.2, 0.0, 0.22);
+    // the tallest surfaces sit nearest the light and read a touch whiter
+    lit *= 1.0 + 0.08 * smoothstep(0.03, 0.35, relief.r * k);
     vec3 plaster = uColor * lit;
     // faint marble veins in the plaster, as on immersive-g.com
     plaster *= 1.0 - texture2D(tGrain, p).g * 0.014;

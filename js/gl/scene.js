@@ -80,7 +80,7 @@ class Flowmap {
       uAspect: { value: 1 },
       // immersive-g.com's flowmap: radius 0.38 / 2, 4.7% fade per 60 fps frame
       uFalloff: { value: 0.19 },
-      uDissipation: { value: 0.953 },
+      uDissipation: { value: 0.962 }, // raised paper lingers a little before settling
       uDelta: { value: 1 },
       uShift: { value: 0 },
       uTime: { value: 0 },
@@ -268,6 +268,12 @@ export class WallScene {
     const cavB = wrap(target(small), true);
     blurRun(height, cavA, 1 / small, 0, 5);
     blurRun(cavA.texture, cavB, 0, 1 / small, 5);
+    // a much wider blur: tall forms (the logo) cast a soft, wide halo onto the
+    // lower layers around them, so height reads without hard shadows
+    const wideA = wrap(target(256), true);
+    const wideB = wrap(target(256), true);
+    blurRun(cavB.texture, wideA, 1 / 256, 0, 9);
+    blurRun(wideA.texture, wideB, 0, 1 / 256, 9);
     const shadeRT = wrap(target(half), true);
     const shade = pass(shadeBakeFrag, { tHeight: { value: height }, tCavity: { value: cavB.texture } });
     run(shade, shadeRT);
@@ -286,7 +292,7 @@ export class WallScene {
     crumpleTmp.dispose();
     r.setRenderTarget(null);
 
-    for (const d of [geometry, material, carve, sculptRT, heightA, heightB, cavA, cavB]) d.dispose();
+    for (const d of [geometry, material, carve, sculptRT, heightA, heightB, cavA, cavB, wideA]) d.dispose();
     for (const p of [combine, blur, reliefBake, horizon, shade, grain, crumple]) p.material.dispose();
     this.bakeStats = { size: N, vertices: geometry.attributes.position.count, waitMs: Math.round(t1 - t0), totalMs: Math.round(performance.now() - t0) };
 
@@ -295,6 +301,7 @@ export class WallScene {
       tHorizonA: { value: horizonA.texture },
       tHorizonB: { value: horizonB.texture },
       tShade: { value: shadeRT.texture },
+      tWide: { value: wideB.texture },
       tGrain: { value: grainRT.texture },
       tCrumple: { value: crumpleRT.texture },
       tFlow: { value: this.flow.texture },
@@ -302,7 +309,7 @@ export class WallScene {
       uBulge: { value: this.reducedMotion ? 0 : 0.005 },
       // camera distance for the perspective push-out (immersive-g's sits
       // ~0.85 tile widths back; ours is a little further, our relief is deeper)
-      uPersp: { value: 1.6 },
+      uPersp: { value: 4.5 }, // relief is now very tall; keep the push-out gentle so it never folds
       uCrumple: { value: this.reducedMotion ? 0 : 0.16 },
       uSnap: { value: this.reducedMotion ? 0 : 0.55 },
       uSmear: { value: this.reducedMotion ? 0 : 0.035 },
