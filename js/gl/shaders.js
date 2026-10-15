@@ -76,7 +76,8 @@ export const flowFrag = /* glsl */ `
     float core = 1.0 - smoothstep(uFalloff * 0.3, uFalloff * 0.55, dist);       // fully revealed
     float ring = (1.0 - smoothstep(uFalloff * 0.55, uFalloff, dist)) * 0.55;    // partly revealed
     float here = max(core, ring);
-    data.b = max(data.b, here);
+    // grow toward the target over ~0.7 s instead of appearing at once
+    data.b = max(data.b, mix(data.b, here, 1.0 - pow(0.94, uDelta)));
     data.rg += uVelocity * stamp(vUv, uMouse, uFalloff) * uDelta;
 
     float g = bloom(vUv, uGhost, uFalloff * 1.25, 3.1);

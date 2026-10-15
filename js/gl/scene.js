@@ -79,7 +79,7 @@ class Flowmap {
       uGhostAmount: { value: 0 },
       uAspect: { value: 1 },
       // immersive-g.com's flowmap: radius 0.38 / 2, 4.7% fade per 60 fps frame
-      uFalloff: { value: 0.3 }, // reveal radius (screen heights): full core, then a partial ring
+      uFalloff: { value: 0.22 }, // reveal radius (screen heights): full core, then a partial ring
       uDissipation: { value: 0.965 }, // the trail left behind settles back over about a second
       uDelta: { value: 1 },
       uShift: { value: 0 },
