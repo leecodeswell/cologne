@@ -1,4 +1,5 @@
 import { WallScene } from "./gl/scene.js";
+import { createFrameSource } from "./gl/framesource.js";
 
 const { gsap, ScrollTrigger, Lenis } = window;
 const root = document.documentElement;
@@ -78,6 +79,7 @@ async function preloadVideos(onProgress) {
   };
 
   const urls = {};
+  const blobs = {};
   await Promise.all(
     paths.map(async (path) => {
       try {
@@ -94,7 +96,8 @@ async function preloadVideos(onProgress) {
           s.got += value.length;
           report();
         }
-        urls[path] = URL.createObjectURL(new Blob(chunks, { type: "video/mp4" }));
+        blobs[path] = new Blob(chunks, { type: "video/mp4" });
+        urls[path] = URL.createObjectURL(blobs[path]);
       } catch {
         urls[path] = path; // e.g. opened from file:// — stream normally
       }
@@ -113,6 +116,7 @@ async function preloadVideos(onProgress) {
       });
     })
   );
+  return blobs;
 }
 
 const counter = document.querySelector("[data-count]");
@@ -132,8 +136,9 @@ async function boot() {
       ]).catch(() => {})
     : Promise.resolve();
 
-  await Promise.all([fonts, preloadVideos((p) => (load.target = p * 0.92))]);
+  const [, blobs] = await Promise.all([fonts, preloadVideos((p) => (load.target = p * 0.92))]);
   await scene?.bakeRelief(); // needs the serif loaded for the lettering
+  const sources = await createFilmSources(blobs);
   load.target = 1;
   await new Promise((resolve) => {
     const check = () => (load.shown > 0.995 ? (gsap.ticker.remove(check), resolve()) : null);
@@ -142,7 +147,7 @@ async function boot() {
   gsap.ticker.remove(updateCounter);
   counter.textContent = "100";
 
-  setupFilms();
+  setupFilms(sources);
   if (reduced) {
     ScrollTrigger.create({
       trigger: ".interlude",
@@ -166,8 +171,16 @@ const films = [];
 
 gsap.ticker.add((_, deltaMs) => {
   for (const f of films) {
+    if (reduced) continue;
+    if (f.source) {
+      // decode exactly the frame for this scroll position
+      f.progress += (f.target - f.progress) * 0.35;
+      if (f.gl) f.gl.uniforms.uProgress.value = f.progress;
+      f.source.show(f.progress * (f.source.frameCount - 1));
+      continue;
+    }
     const d = f.video.duration;
-    if (!d || reduced) continue;
+    if (!d) continue;
     const t = f.target * (d - 0.04);
     f.shown += (t - f.shown) * 0.35;
     if (f.gl) f.gl.uniforms.uProgress.value = f.shown / d;
@@ -226,11 +239,27 @@ function start() {
   });
 }
 
+// One WebCodecs frame source per film (see gl/framesource.js). Where WebCodecs
+// isn't available the films fall back to seeking the <video> element.
+async function createFilmSources(blobs) {
+  const sources = new Map();
+  if (!scene || reduced) return sources;
+  const paths = [...new Set([...document.querySelectorAll(".film video[data-src]")].map((v) => v.dataset.src))];
+  await Promise.all(
+    paths.map(async (path) => {
+      if (!blobs[path]) return;
+      const source = await createFrameSource(await blobs[path].arrayBuffer()).catch(() => null);
+      if (source) sources.set(path, source);
+    })
+  );
+  return sources;
+}
+
 // ---------------------------------------------------------------------------
 // Film chapters: pinned; the frame grows from a card to full-bleed while the
 // scroll position scrubs through the video, then captions play in sequence.
 // ---------------------------------------------------------------------------
-function setupFilms() {
+function setupFilms(sources = new Map()) {
   document.querySelectorAll(".film").forEach((section) => {
     const pin = section.querySelector(".film__pin");
     const frame = section.querySelector(".film__frame");
@@ -238,21 +267,25 @@ function setupFilms() {
     const head = section.querySelector(".film__head");
     const index = section.querySelector(".film__index");
     const caps = gsap.utils.toArray(section.querySelectorAll(".film__captions li"));
-    const film = { video, target: 0, shown: 0 };
+    const source = sources.get(video.dataset.src) || null;
+    const film = { video, source, target: 0, shown: 0, progress: 0 };
     films.push(film);
 
-    if (scene) film.gl = scene.addFilm(frame, video);
-    else video.style.opacity = 1;
-
-    if (reduced) {
-      video.loop = true;
-      video.play().catch(() => {});
-      return;
+    // Reduced motion: the films simply loop as visible <video> elements.
+    if (reduced || !scene) {
+      video.style.opacity = 1;
+      if (reduced) {
+        video.loop = true;
+        video.play().catch(() => {});
+        return;
+      }
+    } else {
+      film.gl = scene.addFilm(frame, video, source);
     }
 
     const state = { expand: 0 };
     const size = () => {
-      const vw = window.innerWidth;
+      const vw = document.documentElement.clientWidth; // excludes the scrollbar
       const vh = window.innerHeight;
       const w0 = Math.min(vw * (vw < 900 ? 0.86 : 0.46), vh * 0.56 * (16 / 9));
       const h0 = (w0 * 9) / 16;

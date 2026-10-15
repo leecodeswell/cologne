@@ -2,7 +2,7 @@
 
 A minimal portfolio site for luxury fragrance films. All copy is Latin placeholder text.
 
-- **Bas-relief wall.** A plaster background in WebGL. The cursor raises a deeply sculpted relief out of the wall, and the raised trail then sinks back. The relief is a dense garden built as real 3D geometry: garden roses and peonies with layered cupped petals, lilies with recurved petals and stamens, bearded irises, vines with tendrils and buds, birds in flight, butterflies, bees, bergamot slices, a lemon, a faceted perfume flacon, a laurel wreath around the "LI" medallion, and a carved Roman inscription. Random swellings and a "ghost cursor" keep the wall moving on its own. While raised, motifs bloom in a staggered order, and petals and wings breathe gently.
+- **Bas-relief wall.** A plaster background in WebGL. The cursor raises a deeply sculpted relief out of the wall, and the raised trail then sinks back. The relief is a dense garden built as real 3D geometry: garden roses and peonies with layered cupped petals, lilies with recurved petals and stamens, bearded irises, vines with tendrils and buds, butterflies, bees, bergamot slices, a lemon, a faceted perfume flacon, a laurel wreath around the "LI" medallion, and a carved Roman inscription. Random swellings and a "ghost cursor" keep the wall moving on its own. While raised, motifs bloom in a staggered order, and petals and wings breathe gently.
 - **Dark interlude.** Between the two films the wall turns to dark polished stone, and the text turns light. The switch happens while a film fills the screen, so it's never seen.
 - **Film chapters.** Each video is pinned while you scroll. It grows from a framed card to full-screen, and the scroll position scrubs through the clip. Latin captions appear in sequence.
 - **Glass ripple.** The same cursor trail refracts the films with a soft chromatic split.
@@ -28,6 +28,7 @@ It deploys as-is to any static host (GitHub Pages, Netlify, Vercel). There is no
 | `css/style.css` | Layout, typography, tokens (colors at the top) |
 | `js/main.js` | Preloader, smooth scroll (Lenis), scroll animations (GSAP ScrollTrigger), cursor, index previews |
 | `js/gl/scene.js` | three.js renderer: flowmap, relief bake, video planes |
+| `js/gl/framesource.js` | Decodes film frames with WebCodecs for frame-accurate scroll-scrubbing |
 | `js/gl/sculpture.js` | Builds the relief as 3D geometry: motifs and composition (edit them here) |
 | `js/gl/sculpture.worker.js` | Runs `sculpture.js` off the main thread |
 | `js/gl/heightmap.js` | The lettering (monogram, inscription), drawn on a 2D canvas |
@@ -84,6 +85,8 @@ Phones, small screens and low-core/low-memory devices get a 1024² bake with 70%
   - `uPersp`: how strongly risen areas push outward from the screen centre (smaller = more perspective)
   - `uCrumple`: how much the sheet breaks into tilted facets while it bends
   - `uSnap`: how strongly the relief rises in five beats rather than smoothly
+  - `uSmear`: how much the image stretches across a rising or sinking edge, so motifs melt in and out like immersive-g's single mesh
+  - The total warp is capped at about 1% of the wall in `reliefFrag`.
 - **Palette:** the wall tone is `uColor` in `js/gl/scene.js`, and the page tokens are at the top of `css/style.css`. Both use immersive-g.com's neutral whites: `#e8e8e8` page, `#030303` ink, and a wall of about `#e0e0e0` at rest.
 - **Shadow depth:** `uAO` (ambient occlusion strength) in `js/gl/scene.js`; cast-shadow and rim strength in `reliefFrag` in `js/gl/shaders.js`
 - **"Alive" motion:** `uAlive` (breathing amplitude) in `js/gl/scene.js`; the staggered bloom is the `lift * 1.3 - phase * 0.3` line in `reliefFrag`
@@ -94,6 +97,12 @@ Phones, small screens and low-core/low-memory devices get a 1024² bake with 70%
 - **Wall parallax:** `WALL_SPEED` in `js/gl/scene.js`
 - **Length of each pinned film chapter:** `end: … * 2.2` in `setupFilms()` in `js/main.js`
 - **Scroll smoothing:** `lerp` in the `Lenis` constructor in `js/main.js` (higher = snappier)
+
+## How the films are scrubbed
+
+`js/gl/framesource.js` reads the MP4 itself and decodes exactly the frame for the current scroll position with WebCodecs. It then draws that frame to a canvas, which WebGL uploads as the film's texture.
+
+Seeking a `<video>` element isn't reliable for this: some browsers (desktop Chrome among them) stop presenting new frames for a video that isn't visibly on screen, and ours sits invisible under the canvas. That made the films freeze. Where WebCodecs isn't available, the site falls back to seeking the `<video>`.
 
 ## Videos for scroll-scrubbing
 

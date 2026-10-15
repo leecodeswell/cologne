@@ -792,14 +792,10 @@ export function buildSculpture({ seed = 11, detail = 1 } = {}) {
     vine(S, rand, pts, 0, phase(), (px, py) => allowVine(px, py) && quiet(px, py) < 0.35);
   }
 
-  // --- birds in flight, above the carpet
-  const birds = [
-    [0.47, 0.13, 0.095, -0.5],
-    [0.92, 0.5, 0.08, -2.6],
-    [0.16, 0.72, 0.1, 0.4],
-    [0.88, 0.04, 0.07, -2.2],
-    [0.33, 0.48, 0.075, -0.9],
-  ];
+  // --- birds in flight (none for now: removed from the composition; add
+  // [x, y, size, angle] entries to bring them back — the fill flows into
+  // the space they would take)
+  const birds = [];
   for (const [x, y, s, a] of birds) {
     bird(S, rand, x, y, s, a, 0.008, phase());
     mark(x, y, s * 0.6);

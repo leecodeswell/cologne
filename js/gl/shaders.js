@@ -280,7 +280,12 @@ export const grainBakeFrag = /* glsl */ `
       period *= 2.0;
       a *= 0.5;
     }
-    gl_FragColor = vec4(v / 0.75);
+    // marble veins: thin ridges of a warped low-frequency noise
+    vec2 w = vUv + 0.04 * vec2(noise(vUv * 9.0, 9.0), noise(vUv * 9.0 + 3.1, 9.0));
+    float r1 = 1.0 - abs(noise(w * 5.0, 5.0) * 2.0 - 1.0);
+    float r2 = 1.0 - abs(noise(w * 11.0 + 1.7, 11.0) * 2.0 - 1.0);
+    float veins = pow(r1, 60.0) + 0.5 * pow(r2, 80.0);
+    gl_FragColor = vec4(v / 0.75, veins, 0.0, 1.0);
   }
 `;
 
@@ -348,6 +353,7 @@ export const reliefFrag = /* glsl */ `
   uniform float uPersp;      // camera distance in tile widths (perspective push-out)
   uniform float uCrumple;    // facet tilt while the sheet bends
   uniform float uSnap;       // 0 = smooth rise, 1 = rises in five distinct beats
+  uniform float uSmear;      // how much the image stretches across a rising/sinking edge
   uniform float uAspect;     // viewport height / width
   uniform float uTileScale;  // viewport width / tile width (<= 1 on phones)
   uniform float uTileX;      // left edge of the viewport on the tile
@@ -385,13 +391,20 @@ export const reliefFrag = /* glsl */ `
     vec2 sheet = uBulge * uReveal * gradL / (uTileScale * vec2(1.0, uAspect));
     float sheetH = uBulge * uReveal * lift;
 
-    // perspective: whatever rises toward the camera spreads away from the
-    // centre of the screen, so the wall visibly bulges instead of only
-    // changing shade. Find the wall point that lands on this pixel.
+    // The wall and the sculpture behave as one membrane (as on
+    // immersive-g.com, where they are one mesh). Where it rises toward the
+    // camera, perspective pushes it outward from the screen centre; where
+    // neighbouring parts sit at different heights, the image stretches and
+    // smears, so motifs melt in and out instead of fading. The warp uses the
+    // wide-blurred height, so it bends smoothly rather than tearing.
     vec2 fromCentre = (vUv - 0.5) * vec2(1.0, uAspect) * uTileScale;
     float lk0 = smoothstep(0.0, 1.0, clamp(lift * 1.3, 0.0, 1.0));
-    float h0 = texture2D(tRelief, p).r * mix(uRest, 1.0, lk0) * uReveal + sheetH;
-    p -= fromCentre * h0 / uPersp;
+    float hSoft = max(texture2D(tShade, p).g, 0.0);
+    float hm = hSoft * lk0 * uReveal + sheetH;
+    vec2 gradT = gradL / (uTileScale * vec2(1.0, uAspect));
+    vec2 warp = fromCentre * hm / uPersp + gradT * hSoft * uSmear * uReveal;
+    float wl = length(warp);
+    p -= wl > 0.012 ? warp * (0.012 / wl) : warp; // never more than ~1% of the wall
 
     vec4 relief = texture2D(tRelief, p);
     vec4 shade = texture2D(tShade, p);
@@ -401,7 +414,7 @@ export const reliefFrag = /* glsl */ `
 
     // motifs rise in a staggered order (by motif and by paper facet), in five
     // quick beats like a relief baked at five depths, then breathe while raised
-    float lk = clamp(lift * 1.35 - phase * 0.3 - crum.b * 0.18 + 0.08, 0.0, 1.0);
+    float lk = clamp(lift * 1.35 - phase * 0.3 - crum.b * 0.18, 0.0, 1.0);
     float beats = lk * 5.0;
     float stepped = (floor(beats) + smoothstep(0.0, 0.4, fract(beats))) / 5.0;
     lk = mix(lk, stepped, uSnap);
@@ -430,24 +443,28 @@ export const reliefFrag = /* glsl */ `
 
     // soft cast shadow: is the terrain toward the light steeper than the light?
     float rise = L.z / length(L.xy);
-    float shadow = 1.0 - 0.62 * smoothstep(rise * 0.5, rise * 1.6, shade.r * s);
+    // a light, crisp cast shadow (immersive-g's renders keep shadows pale)
+    float shadow = 1.0 - 0.3 * smoothstep(rise * 0.75, rise * 1.25, shade.r * s);
 
-    // cavity: crevices a little darker, crests a little brighter
+    // cavity: crevices a touch darker, crests a touch brighter
     float cav = (shade.g - relief.r) * s;
-    float cavity = 1.0 - clamp(cav * 24.0, 0.0, 0.25) + clamp(-cav * 6.0, 0.0, 0.05);
+    float cavity = 1.0 - clamp(cav * 18.0, 0.0, 0.12) + clamp(-cav * 6.0, 0.0, 0.05);
 
-    // crisp light on convex rims (petal edges, feather shafts, berries)
+    // crisp light on convex rims (petal edges, feather shafts, berries) and a
+    // fine dark line where forms meet, so edges read sharp, not muddy
     float curv = -relief.a * s;
     vec2 nxy = n.xy + 1e-5;
     float toLight = max(dot(normalize(nxy), normalize(L.xy)), 0.0);
     float rim = smoothstep(0.25, 1.6, curv) * (0.35 + 0.65 * toLight);
+    float contact = smoothstep(0.5, 2.2, -curv);
 
-    const float amb = 0.5;
-    const float kd = 0.75;
-    float lit = (amb * ao + kd * diff * shadow * mix(1.0, ao, 0.4)) / (amb + kd * L.z);
+    const float amb = 0.64;
+    const float kd = 0.52;
+    float lit = (amb * ao + kd * diff * shadow * mix(1.0, ao, 0.3)) / (amb + kd * L.z);
     vec3 plaster = uColor * lit * cavity;
-    // occluded plaster stays neutral grey, as on immersive-g.com
-    plaster *= mix(0.96, 1.0, ao);
+    plaster *= 1.0 - contact * 0.1;
+    // faint marble veins in the plaster, as on immersive-g.com
+    plaster *= 1.0 - texture2D(tGrain, p).g * 0.014;
     // paper creases catch a thin dark line while the sheet is bending
     plaster *= 1.0 - crease * 0.07;
     vec3 R = reflect(-L, n);

@@ -38,6 +38,7 @@ html.is-dark {
 
 html {
   -webkit-text-size-adjust: 100%;
+  overflow-x: clip; /* never a sideways scrollbar, even with pinned sections */
 }
 
 html.lenis,

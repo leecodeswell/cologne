@@ -244,7 +244,7 @@ export class WallScene {
       blur.material.uniforms.uSigma.value = sigma;
       run(blur, output);
     };
-    const sigma = N >= 2048 ? 1.1 : 0.7;
+    const sigma = N >= 2048 ? 0.7 : 0.5; // light blur keeps edges crisp
     blurRun(heightA.texture, heightB, 1 / N, 0, sigma);
     blurRun(heightB.texture, heightA, 0, 1 / N, sigma);
     const height = heightA.texture;
@@ -296,20 +296,21 @@ export class WallScene {
       tFlow: { value: this.flow.texture },
       uFlowTexel: { value: new THREE.Vector2(1 / FLOW_SIZE, 1 / FLOW_SIZE) },
       uBulge: { value: this.reducedMotion ? 0 : 0.005 },
-      // immersive-g's camera sits ~0.85 tile widths back; our relief is
-      // deeper than theirs, so push out a third as much
-      uPersp: { value: 2.6 },
+      // camera distance for the perspective push-out (immersive-g's sits
+      // ~0.85 tile widths back; ours is a little further, our relief is deeper)
+      uPersp: { value: 1.6 },
       uCrumple: { value: this.reducedMotion ? 0 : 0.16 },
       uSnap: { value: this.reducedMotion ? 0 : 0.55 },
+      uSmear: { value: this.reducedMotion ? 0 : 0.035 },
       uAspect: { value: 1 },
       uTileScale: { value: 1 },
       uTileX: { value: 0 },
       uScroll: { value: 0 },
       uTime: { value: 0 },
-      uRest: { value: this.reducedMotion ? 0.4 : 0.015 },
+      uRest: { value: this.reducedMotion ? 0.4 : 0.0 }, // blank plaster at rest, as on immersive-g.com
       uReveal: { value: 0 },
       uDepth: { value: 1.0 },
-      uAO: { value: 1.1 },
+      uAO: { value: 0.55 },
       uAlive: { value: this.reducedMotion ? 0 : 0.12 },
       // raw sRGB values: THREE.Color would convert hex to linear and darken it
       // immersive-g.com's wall: neutral grey, about #e0e0e0 at rest
@@ -324,10 +325,13 @@ export class WallScene {
   }
 
   // Draw a <video> inside the bounds of a DOM element.
-  addFilm(element, video) {
-    // Must be a VideoTexture: a plain Texture would allocate storage from
-    // video.width (0) instead of videoWidth and render black.
-    const texture = new THREE.VideoTexture(video);
+  // With a WebCodecs frame source (framesource.js) the texture comes from its
+  // canvas, which works even where the browser stops presenting frames for
+  // an invisible <video>; otherwise the <video> itself is the texture.
+  addFilm(element, video, source = null) {
+    // Must be a VideoTexture for <video>: a plain Texture would allocate
+    // storage from video.width (0) instead of videoWidth and render black.
+    const texture = source ? new THREE.CanvasTexture(source.canvas) : new THREE.VideoTexture(video);
     texture.colorSpace = THREE.NoColorSpace;
     texture.minFilter = THREE.LinearFilter;
     texture.magFilter = THREE.LinearFilter;
@@ -353,13 +357,18 @@ export class WallScene {
     mesh.frustumCulled = false;
     this.filmScene.add(mesh);
 
-    const film = { element, video, texture, uniforms, mesh, dirty: true };
+    const film = { element, video, source, texture, uniforms, mesh, dirty: true };
     const markDirty = () => (film.dirty = true);
-    video.addEventListener("seeked", markDirty);
-    video.addEventListener("loadeddata", () => {
-      uniforms.uVideo.value.set(video.videoWidth || 1920, video.videoHeight || 1080);
-      markDirty();
-    });
+    if (source) {
+      uniforms.uVideo.value.set(source.width, source.height);
+      source.onFrame = markDirty;
+    } else {
+      video.addEventListener("seeked", markDirty);
+      video.addEventListener("loadeddata", () => {
+        uniforms.uVideo.value.set(video.videoWidth || 1920, video.videoHeight || 1080);
+        markDirty();
+      });
+    }
     this.films.push(film);
     return film;
   }
@@ -374,7 +383,7 @@ export class WallScene {
   }
 
   resize() {
-    this.width = window.innerWidth;
+    this.width = document.documentElement.clientWidth; // excludes the scrollbar
     this.height = window.innerHeight;
     // the wall is soft and the films are 1080p, so extra pixels buy little
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
@@ -550,7 +559,12 @@ export class WallScene {
       f.uniforms.uPlane.value.set(r.width, r.height);
       f.uniforms.tFlow.value = this.flow.texture;
       f.uniforms.uTime.value = this.time;
-      if (f.video.readyState >= 2 && (f.dirty || !f.video.paused)) {
+      if (f.source) {
+        if (f.dirty) {
+          f.texture.needsUpdate = true;
+          f.dirty = false;
+        }
+      } else if (f.video.readyState >= 2 && (f.dirty || !f.video.paused)) {
         f.texture.needsUpdate = true;
         f.dirty = false;
       }
